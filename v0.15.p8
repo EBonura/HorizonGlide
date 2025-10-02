@@ -15,12 +15,6 @@ function fmt2(n)
     return (neg and "-" or "")..flr(s/100).."."..sub("0"..(s%100),-2)
 end
 
-function fmt3(n)
-    local s=flr(n*1000+0.5)
-    local neg=s<0 if neg then s=-s end
-    return (neg and "-" or "")..flr(s/1000).."."..sub("00"..(s%1000),-3)
-end
-
 function opt_text(o)
     return "⬅️ "..o.name..": "..(o.is_seed and current_seed or tostr(o.values[o.current])).." ➡️"
 end
@@ -256,7 +250,7 @@ function _draw()
         cache_hits,cache_misses=0,0
     end
 
-    printh("mem: "..fmt3(stat(0)).." | cpu: "..fmt3(stat(1)).." | fps: "..tostr(stat(7)).." | cache: "..cache_size.." | hit%: "..hit_rate.." | new: "..cache_new_entries.." | budget: "..terrain_calls_this_frame.."/"..terrain_call_budget)
+    printh("mem: "..fmt2(stat(0)).." | cpu: "..fmt2(stat(1)).." | fps: "..tostr(stat(7)).." | cache: "..cache_size.." | hit%: "..hit_rate.." | new: "..cache_new_entries.." | budget: "..terrain_calls_this_frame.."/"..terrain_call_budget)
     cache_new_entries=0
 end
 
@@ -603,11 +597,29 @@ end
 function draw_world()
     local px,py=flr(player_ship.x),flr(player_ship.y)
 
-    -- draw water first
+    -- v3 optimization: pre-fetch all tiles, inline drawing, localize globals
+    local tiles={}
     for x=px-view_range,px+view_range do
         for y=py-view_range,py+view_range do
             local top,side,dark,h=terrain(x,y)
-            if h<=0 then draw_tile(x,y,top,side,dark,h) end
+            tiles[x..","..y]={top,side,dark,h}
+        end
+    end
+
+    local htw,hth,co_x,co_y,bh,t_val=half_tile_width,half_tile_height,cam_offset_x,cam_offset_y,block_h,time()
+
+    -- draw water
+    for x=px-view_range,px+view_range do
+        for y=py-view_range,py+view_range do
+            local t=tiles[x..","..y]
+            local h=t[4]
+            if h<=0 then
+                local bsx,bsy=(x-y)*htw,(x+y)*hth
+                local sx,sy=co_x+bsx,co_y+bsy
+                diamond(sx,sy,t[1])
+                local yb=flr(sy+((x+y)&1)+sin(t_val+(x+y)/8))
+                line(sx-htw,yb,sx+htw,yb,(h<=-2) and 12 or 1)
+            end
         end
     end
 
@@ -628,11 +640,33 @@ function draw_world()
         if s.life<=0 then deli(ws,i) end
     end
 
-    -- draw land on top
+    -- draw land with pre-fetched neighbor heights
     for x=px-view_range,px+view_range do
         for y=py-view_range,py+view_range do
-            local top,side,dark,h=terrain(x,y)
-            if h>0 then draw_tile(x,y,top,side,dark,h) end
+            local t=tiles[x..","..y]
+            local h=t[4]
+            if h>0 then
+                local bsx,bsy=(x-y)*htw,(x+y)*hth
+                local sx,sy=co_x+bsx,co_y+bsy
+                local hp=h*bh
+                local sy2=sy-hp
+                local cy=co_y+bsy+hth-hp
+
+                local ts=tiles[x..","..(y+1)]
+                local te=tiles[(x+1)..","..y]
+                local hs=ts and ts[4] or 0
+                local he=te and te[4] or 0
+
+                if hs<h then
+                    local lb=sx-htw
+                    for i=0,hp do line(lb,sy2+i,sx,cy+i,t[2]) end
+                end
+                if he<h then
+                    local rb=sx+htw
+                    for i=0,hp do line(rb,sy2+i,sx,cy+i,t[3]) end
+                end
+                diamond(sx,sy2,t[1])
+            end
         end
     end
 
@@ -1664,39 +1698,13 @@ end
 
 
 function diamond(sx,sy,c)
-    for r=0,half_tile_height do
-        local w=half_tile_width-r*2
+    local w=half_tile_width
+    line(sx-w,sy,sx+w,sy,c)
+    for r=1,half_tile_height do
+        w-=2
         line(sx-w,sy-r,sx+w,sy-r,c)
         line(sx-w,sy+r,sx+w,sy+r,c)
     end
-end
-
-function draw_tile(x,y,top,side,dark,h)
-    local bsx,bsy=(x-y)*half_tile_width,(x+y)*half_tile_height
-    local sx,sy=cam_offset_x+bsx,cam_offset_y+bsy
-
-    -- water
-    if h<=0 then
-        diamond(sx,sy,top)
-        local lb,rb=sx-half_tile_width,sx+half_tile_width
-        local yb=flr(sy+((x+y)&1)+sin(time()+(x+y)/8))
-        line(lb,yb,rb,yb,(h<=-2) and 12 or 1)
-        return
-    end
-
-    -- land: faces then top
-    local hp=(h>0) and h*block_h or 0
-    local sy2=sy-hp
-    local by=bsy+half_tile_height-hp
-    local hs,he=terrain_h(x,y+1),terrain_h(x+1,y)
-    local face=((hs<h) and 1 or 0)+((he<h) and 2 or 0)
-    local lb,rb=sx-half_tile_width,sx+half_tile_width
-
-    for i=0,hp do
-        if (face&1)>0 then line(lb,sy2+i,sx,cam_offset_y+by+i,side) end
-        if (face&2)>0 then line(rb,sy2+i,sx,cam_offset_y+by+i,dark) end
-    end
-    diamond(sx,sy2,top)
 end
 
 
