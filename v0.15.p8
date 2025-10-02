@@ -115,7 +115,7 @@ function _init()
     }
 
     -- terrain + tiles (terrain() uses menu_options)
-    last_cache_cleanup,current_seed=0,1337
+    current_seed=1337
     terrain_perm,cell_cache=generate_permutation(current_seed),{}
     tile_manager:init()
     tile_manager:update_player_position(0,0)
@@ -550,7 +550,6 @@ function init_game()
     
     -- Ensure altitude is correct
     player_ship:set_altitude()
-    last_cache_cleanup = time()
 
     -- wipe top texts
     ui_msg,ui_vis,ui_until,ui_rmsg="",0,0,""
@@ -1772,25 +1771,15 @@ end
 
 
 function tile_manager:cleanup_cache()
-    -- run at most ~1s
-    local t=time()
-    if t-last_cache_cleanup<=1 then return end
-
-    -- keep cells near player (covers tiles + minimap)
-    local R=max(view_range*2,36)
-    local x1,y1=self.player_x-R,self.player_y-R
-    local x2,y2=self.player_x+R,self.player_y+R
-
-    -- prune in place
+    local x1,y1=self.player_x-view_range*2,self.player_y-view_range*2
+    local x2,y2=self.player_x+view_range*2,self.player_y+view_range*2
     for k in pairs(cell_cache) do
-        local p=split(k,",",true) -- "x,y" -> numbers
+        local p=split(k,",",true)
         local x,y=p[1],p[2]
         if x<x1 or x>x2 or y<y1 or y>y2 then
             cell_cache[k]=nil
         end
     end
-
-    last_cache_cleanup=t
 end
 
 
