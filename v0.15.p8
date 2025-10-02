@@ -45,46 +45,11 @@ TERRAIN_PAL_STR = "\1\0\0\12\1\1\15\4\2\3\1\0\11\3\1\4\2\0\6\5\0\7\6\5"
 TERRAIN_THRESH = split"-2,0,2,6,12,18,24,99"
 
 function terrain(x,y)
-    -- floor to integer coordinates for cache consistency
+    -- simple lookup - generation handled by tile_manager
     x,y=flr(x),flr(y)
-    local key=x..","..y
-    local c=cell_cache[key]
-    if c then cache_hits+=1 return unpack(c) end
-
-    -- BUDGET CHECK: if exhausted, return default values
-    if terrain_calls_this_frame>=terrain_call_budget then
-        return 1,0,0,0  -- default: color 1, height 0
-    end
-
-    -- We have budget - generate terrain
-    cache_misses+=1
-    terrain_calls_this_frame+=1
-
-    -- scaled coords + base continentalness
-    local scale=menu_options[1].values[menu_options[1].current]
-    local water_level=menu_options[2].values[menu_options[2].current]
-    local nx,ny=x/scale,y/scale
-    local cont=perlin2d(nx*.03,ny*.03,terrain_perm)*15
-
-    -- 3 fixed octaves (normalized by 1.75), then scaled by 10
-    local hdetail=( perlin2d(nx,ny,terrain_perm)
-                    + perlin2d(nx*2,ny*2,terrain_perm)*.5
-                    + perlin2d(nx*4,ny*4,terrain_perm)*.25 )*(15/1.75)  -- was 10/1.75
-
-    -- ridges + inland mountain factor (inlined)
-    local rid=abs(perlin2d(nx*.5,ny*.5,terrain_perm))^1.5
-    local mountain=rid*max(0,cont/15+.5)*30
-
-    -- final clamped height
-    local h=flr(mid(cont+hdetail+mountain-water_level,-4,28))
-
-    -- palette lookup + cache
-    local i=1
-    while h>TERRAIN_THRESH[i] do i+=1 end
-    local p=(i-1)*3+1
-    cell_cache[key]={ord(TERRAIN_PAL_STR,p),ord(TERRAIN_PAL_STR,p+1),ord(TERRAIN_PAL_STR,p+2),h}
-    cache_new_entries+=1
-    return unpack(cell_cache[key])
+    local c=cell_cache[x..","..y]
+    if c then return unpack(c) end
+    return 1,0,0,0  -- default if not cached
 end
 
 function terrain_h(x,y,clamp)
@@ -1711,52 +1676,76 @@ end
 
 
 
--- TILE MANAGER (simplified - tracks player position and manages cache)
+-- TILE MANAGER (optimized: inline generation + precomputed palette)
 tile_manager = {
     player_x = 0,
-    player_y = 0
+    player_y = 0,
+    palette_cache = nil
 }
 
 function tile_manager:init()
     self.player_x, self.player_y = 0, 0
+    -- precompute palette lookup table
+    if not self.palette_cache then
+        self.palette_cache={}
+        for i=1,8 do
+            local p=(i-1)*3+1
+            self.palette_cache[i]={ord(TERRAIN_PAL_STR,p),ord(TERRAIN_PAL_STR,p+1),ord(TERRAIN_PAL_STR,p+2)}
+        end
+    end
 end
 
 function tile_manager:update_player_position(px, py)
     self.player_x, self.player_y = flr(px), flr(py)
 end
 
--- CACHE MANAGEMENT: authoritative - define exactly what should exist
+-- CACHE MANAGEMENT: inline terrain generation with string keys (safe, fast)
 function tile_manager:manage_cache()
     local px,py=self.player_x,self.player_y
-    local margin=view_range*2  -- Smaller buffer: ±14 (841 total tiles)
+    local margin=view_range*2
+    local pxm,pym=px-margin,py-margin
+    local pxp,pyp=px+margin,py+margin
+    local cache=cell_cache
+    local perm=terrain_perm
+    local thresh=TERRAIN_THRESH
+    local palcache=self.palette_cache
+    local scale=menu_options[1].values[menu_options[1].current]
+    local water_level=menu_options[2].values[menu_options[2].current]
+    local added,removed=0,0
 
-    -- Phase 1: Fill missing tiles in extended range (up to budget)
-    local added=0
-    for x=px-margin,px+margin do
-        if added>=terrain_call_budget then break end
-        for y=py-margin,py+margin do
-            if added>=terrain_call_budget then break end
+    -- Phase 1: Fill missing tiles (inline generation, budget=50)
+    for x=pxm,pxp do
+        if added>=50 then break end
+        for y=pym,pyp do
+            if added>=50 then break end
             local key=x..","..y
-            if not cell_cache[key] then
-                terrain(x,y)
+            if not cache[key] then
+                -- inline terrain generation
+                local nx,ny=x/scale,y/scale
+                local cont=perlin2d(nx*.03,ny*.03,perm)*15
+                local hdetail=(perlin2d(nx,ny,perm)+perlin2d(nx*2,ny*2,perm)*.5+perlin2d(nx*4,ny*4,perm)*.25)*(15/1.75)
+                local rid=abs(perlin2d(nx*.5,ny*.5,perm))^1.5
+                local mountain=rid*max(0,cont/15+.5)*30
+                local h=flr(mid(cont+hdetail+mountain-water_level,-4,28))
+                local i=1
+                while h>thresh[i] do i+=1 end
+                local pal=palcache[i]
+                cache[key]={pal[1],pal[2],pal[3],h}
                 added+=1
+                cache_new_entries+=1
+            else
+                cache_hits+=1
             end
         end
     end
 
-    -- Phase 2: Remove EVERYTHING outside extended range (lightweight cleanup)
-    local x1,y1=px-margin,py-margin
-    local x2,y2=px+margin,py+margin
-    local removed=0
-    local max_removals=10  -- reduced from 50
-
-    for k in pairs(cell_cache) do
-        if removed>=max_removals then break end
-
+    -- Phase 2: Remove tiles outside range
+    for k in pairs(cache) do
+        if removed>=10 then break end
         local p=split(k,",",true)
         local x,y=p[1],p[2]
-        if x<x1 or x>x2 or y<y1 or y>y2 then
-            cell_cache[k]=nil
+        if x<pxm or x>pxp or y<pym or y>pyp then
+            cache[k]=nil
             removed+=1
         end
     end
