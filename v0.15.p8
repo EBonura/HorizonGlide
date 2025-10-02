@@ -15,6 +15,12 @@ function fmt2(n)
     return (neg and "-" or "")..flr(s/100).."."..sub("0"..(s%100),-2)
 end
 
+function fmt3(n)
+    local s=flr(n*1000+0.5)
+    local neg=s<0 if neg then s=-s end
+    return (neg and "-" or "")..flr(s/1000).."."..sub("00"..(s%1000),-3)
+end
+
 function opt_text(o)
     return "⬅️ "..o.name..": "..(o.is_seed and current_seed or tostr(o.values[o.current])).." ➡️"
 end
@@ -45,10 +51,20 @@ TERRAIN_PAL_STR = "\1\0\0\12\1\1\15\4\2\3\1\0\11\3\1\4\2\0\6\5\0\7\6\5"
 TERRAIN_THRESH = split"-2,0,2,6,12,18,24,99"
 
 function terrain(x,y)
-    -- cache hit
+    -- floor to integer coordinates for cache consistency
+    x,y=flr(x),flr(y)
     local key=x..","..y
     local c=cell_cache[key]
-    if c then return unpack(c) end
+    if c then cache_hits+=1 return unpack(c) end
+
+    -- BUDGET CHECK: if exhausted, return default values
+    if terrain_calls_this_frame>=terrain_call_budget then
+        return 1,0,0,0  -- default: color 1, height 0
+    end
+
+    -- We have budget - generate terrain
+    cache_misses+=1
+    terrain_calls_this_frame+=1
 
     -- scaled coords + base continentalness
     local scale=menu_options[1].values[menu_options[1].current]
@@ -73,6 +89,7 @@ function terrain(x,y)
     while h>TERRAIN_THRESH[i] do i+=1 end
     local p=(i-1)*3+1
     cell_cache[key]={ord(TERRAIN_PAL_STR,p),ord(TERRAIN_PAL_STR,p+1),ord(TERRAIN_PAL_STR,p+2),h}
+    cache_new_entries+=1
     return unpack(cell_cache[key])
 end
 
@@ -117,6 +134,13 @@ function _init()
     -- terrain + tiles (terrain() uses menu_options)
     current_seed=1337
     terrain_perm,cell_cache=generate_permutation(current_seed),{}
+    cache_hits,cache_misses,cache_new_entries=0,0,0
+
+    -- terrain call budgeting (rate limiting)
+    terrain_calls_this_frame=0
+    terrain_call_budget=15
+
+
     tile_manager:init()
     tile_manager:update_player_position(0,0)
 
@@ -133,6 +157,8 @@ end
 
 
 function _update()
+    terrain_calls_this_frame=0  -- reset terrain generation budget
+
     if game_state=="startup" then
         -- intro timer + gentle drift
         startup_timer+=1
@@ -150,7 +176,6 @@ function _update()
 
         -- stream tiles
         tile_manager:update_player_position(player_ship.x,player_ship.y)
-        tile_manager:update_tiles()
 
         -- ambient particles
         if startup_timer%3==0 then player_ship:spawn_particles(1,0) end
@@ -205,7 +230,7 @@ function _update()
     end
 
     particle_sys:update()
-    tile_manager:cleanup_cache()
+    tile_manager:manage_cache()
 end
 
 
@@ -220,8 +245,19 @@ function _draw()
     else -- "death"
         draw_death()
     end
-    -- perf monitor
-    printh("mem: "..tostr(stat(0)).." \t| cpu: "..tostr(stat(1)).." \t| fps: "..tostr(stat(7)))
+    -- perf monitor with cache stats
+    local cache_size=0 for _ in pairs(cell_cache) do cache_size+=1 end
+
+    local total_calls=cache_hits+cache_misses
+    local hit_rate=total_calls>0 and flr(cache_hits/total_calls*100) or 0
+
+    -- prevent overflow: reset counters periodically (after logging)
+    if total_calls>30000 then
+        cache_hits,cache_misses=0,0
+    end
+
+    printh("mem: "..fmt3(stat(0)).." | cpu: "..fmt3(stat(1)).." | fps: "..tostr(stat(7)).." | cache: "..cache_size.." | hit%: "..hit_rate.." | new: "..cache_new_entries.." | budget: "..terrain_calls_this_frame.."/"..terrain_call_budget)
+    cache_new_entries=0
 end
 
 
@@ -255,7 +291,7 @@ function draw_death()
     -- digital break effect phase
     if death_phase==0 then
         -- draw the game world first
-        cls(1) 
+        cls(1)
         draw_world()
         -- horizontal tears
         if el > 0.2 then
@@ -459,11 +495,11 @@ function regenerate_world_live()
     -- new terrain + clear cache
     terrain_perm=generate_permutation(current_seed)
     cell_cache={}
+    cache_hits,cache_misses,cache_new_entries=0,0,0
 
     -- rebuild tiles around current ship position
     tile_manager:init()
     tile_manager:update_player_position(player_ship.x,player_ship.y)
-    tile_manager:update_tiles()
 
     -- reset altitude to new terrain
     player_ship:set_altitude()
@@ -565,8 +601,15 @@ end
 
 
 function draw_world()
-    -- water first
-    for t in all(tile_manager.tile_list) do if t.height<=0 then t:draw() end end
+    local px,py=flr(player_ship.x),flr(player_ship.y)
+
+    -- draw water first
+    for x=px-view_range,px+view_range do
+        for y=py-view_range,py+view_range do
+            local top,side,dark,h=terrain(x,y)
+            if h<=0 then draw_tile(x,y,top,side,dark,h) end
+        end
+    end
 
     -- water rings (update + draw)
     for i=#ws,1,-1 do
@@ -585,8 +628,13 @@ function draw_world()
         if s.life<=0 then deli(ws,i) end
     end
 
-    -- land on top
-    for t in all(tile_manager.tile_list) do if t.height>0 then t:draw() end end
+    -- draw land on top
+    for x=px-view_range,px+view_range do
+        for y=py-view_range,py+view_range do
+            local top,side,dark,h=terrain(x,y)
+            if h>0 then draw_tile(x,y,top,side,dark,h) end
+        end
+    end
 
     -- fx + ship
     particle_sys:draw()
@@ -1612,30 +1660,6 @@ end
 
 
 
--- TILE CLASS
-tile = {}
-tile.__index = tile
-
-function tile.new(x,y)
-    local top,side,dark,h=terrain(x,y)
-    local bsx,bsy=(x-y)*half_tile_width,(x+y)*half_tile_height
-    local hp=(h>0) and h*block_h or 0
-
-    -- only need south/east for face shading
-    local hs,he=terrain_h(x,  y+1),terrain_h(x+1,y)
-    local face=((hs<h) and 1 or 0)+((he<h) and 2 or 0)
-
-    return setmetatable({
-        x=x,y=y,height=h,
-        top_col=top,side_col=side,dark_col=dark,
-        base_sx=bsx,base_sy=bsy,
-        hp=hp,face=face,
-        r=(x+y)&1,
-        lb=bsx-half_tile_width,
-        rb=bsx+half_tile_width,
-        by=bsy+half_tile_height
-    },tile)
-end
 
 
 
@@ -1647,137 +1671,85 @@ function diamond(sx,sy,c)
     end
 end
 
-
-
-function tile:draw()
-    local sx,sy=cam_offset_x+self.base_sx,cam_offset_y+self.base_sy
-    local lb,rb=cam_offset_x+self.lb,cam_offset_x+self.rb
+function draw_tile(x,y,top,side,dark,h)
+    local bsx,bsy=(x-y)*half_tile_width,(x+y)*half_tile_height
+    local sx,sy=cam_offset_x+bsx,cam_offset_y+bsy
 
     -- water
-    if self.height<=0 then
-        diamond(sx,sy,self.top_col)
-        local yb=flr(sy+self.r+sin(time()+(self.x+self.y)/8))
-        line(lb,yb,rb,yb,(self.height<=-2) and 12 or 1)
+    if h<=0 then
+        diamond(sx,sy,top)
+        local lb,rb=sx-half_tile_width,sx+half_tile_width
+        local yb=flr(sy+((x+y)&1)+sin(time()+(x+y)/8))
+        line(lb,yb,rb,yb,(h<=-2) and 12 or 1)
         return
     end
 
-    -- land: faces then top (no outer check)
-    local hp=self.hp
+    -- land: faces then top
+    local hp=(h>0) and h*block_h or 0
     local sy2=sy-hp
-    local by=cam_offset_y+self.by-hp
-    local m=self.face
+    local by=bsy+half_tile_height-hp
+    local hs,he=terrain_h(x,y+1),terrain_h(x+1,y)
+    local face=((hs<h) and 1 or 0)+((he<h) and 2 or 0)
+    local lb,rb=sx-half_tile_width,sx+half_tile_width
+
     for i=0,hp do
-        if (m&1)>0 then line(lb,sy2+i,sx,by+i,self.side_col) end
-        if (m&2)>0 then line(rb,sy2+i,sx,by+i,self.dark_col) end
+        if (face&1)>0 then line(lb,sy2+i,sx,cam_offset_y+by+i,side) end
+        if (face&2)>0 then line(rb,sy2+i,sx,cam_offset_y+by+i,dark) end
     end
-    diamond(sx,sy2,self.top_col)
+    diamond(sx,sy2,top)
 end
 
 
 
 
 
--- TILE MANAGER
+-- TILE MANAGER (simplified - tracks player position and manages cache)
 tile_manager = {
-    tiles = {},
-    tile_list = {},
-    min_x = 0,
-    min_y = 0,
-    max_x = 0,
-    max_y = 0,
+    player_x = 0,
+    player_y = 0
 }
 
-
 function tile_manager:init()
-    self.tiles, self.tile_list = {}, {}
-    self.min_x, self.max_x, self.min_y, self.max_y = 0,0,0,0
-    self.player_x, self.player_y = self.player_x or 0, self.player_y or 0
-    self.view_range_cached = view_range
+    self.player_x, self.player_y = 0, 0
 end
-
-
-function tile_manager:add_tile(x,y)
-    local row=self.tiles[x]
-    if not row then row={} self.tiles[x]=row end
-    if row[y] then return end
-
-    local t=tile.new(x,y)
-    row[y]=t
-
-    -- insert sorted by (x+y)
-    local list=self.tile_list
-    local k=t.x+t.y
-    local i=#list
-    while i>0 and (list[i].x+list[i].y)>k do i-=1 end
-    add(list,t,i+1)
-end
-
-
-function tile_manager:remove_tile(x,y)
-    local row=self.tiles[x]
-    if row and row[y] then
-        del(self.tile_list,row[y])
-        row[y]=nil
-        if not next(row) then self.tiles[x]=nil end
-    end
-end
-
 
 function tile_manager:update_player_position(px, py)
-    local nx, ny = flr(px), flr(py)
-    local ox, oy = self.player_x or nx, self.player_y or ny
-    if nx == ox and ny == oy then return end
-    self.dx_pending, self.dy_pending = nx - ox, ny - oy
-    self.player_x, self.player_y = nx, ny
-    self:update_tiles()
+    self.player_x, self.player_y = flr(px), flr(py)
 end
 
-function tile_manager:update_tiles()
-    local nminx,nminy=self.player_x-view_range,self.player_y-view_range
-    local nmaxx,nmaxy=self.player_x+view_range,self.player_y+view_range
+-- CACHE MANAGEMENT: authoritative - define exactly what should exist
+function tile_manager:manage_cache()
+    local px,py=self.player_x,self.player_y
+    local margin=view_range*2  -- Smaller buffer: ±14 (841 total tiles)
 
-    -- first fill or range change ヌ●★ full rebuild
-    if #self.tile_list<1 or self.view_range_cached!=view_range then
-        for x=nminx,nmaxx do for y=nminy,nmaxy do self:add_tile(x,y) end end
-        self.min_x,self.max_x,self.min_y,self.max_y=nminx,nmaxx,nminy,nmaxy
-        self.view_range_cached=view_range self.dx_pending,self.dy_pending=0,0
-        return
+    -- Phase 1: Fill missing tiles in extended range (up to budget)
+    local added=0
+    for x=px-margin,px+margin do
+        if added>=terrain_call_budget then break end
+        for y=py-margin,py+margin do
+            if added>=terrain_call_budget then break end
+            local key=x..","..y
+            if not cell_cache[key] then
+                terrain(x,y)
+                added+=1
+            end
+        end
     end
 
-    local dx,dy=self.dx_pending or 0,self.dy_pending or 0
-    if dx==0 and dy==0 then return end
+    -- Phase 2: Remove EVERYTHING outside extended range (lightweight cleanup)
+    local x1,y1=px-margin,py-margin
+    local x2,y2=px+margin,py+margin
+    local removed=0
+    local max_removals=10  -- reduced from 50
 
-    -- moved in x?
-    if dx>0 then
-        for y=nminy,nmaxy do self:add_tile(nmaxx,y) end
-        for y=self.min_y,self.max_y do self:remove_tile(self.min_x,y) end
-    elseif dx<0 then
-        for y=nminy,nmaxy do self:add_tile(nminx,y) end
-        for y=self.min_y,self.max_y do self:remove_tile(self.max_x,y) end
-    end
-
-    -- moved in y?
-    if dy>0 then
-        for x=nminx,nmaxx do self:add_tile(x,nmaxy) end
-        for x=self.min_x,self.max_x do self:remove_tile(x,self.min_y) end
-    elseif dy<0 then
-        for x=nminx,nmaxx do self:add_tile(x,nminy) end
-        for x=self.min_x,self.max_x do self:remove_tile(x,self.max_y) end
-    end
-
-    self.min_x,self.max_x,self.min_y,self.max_y=nminx,nmaxx,nminy,nmaxy
-    self.dx_pending,self.dy_pending=0,0
-end
-
-
-function tile_manager:cleanup_cache()
-    local x1,y1=self.player_x-view_range*2,self.player_y-view_range*2
-    local x2,y2=self.player_x+view_range*2,self.player_y+view_range*2
     for k in pairs(cell_cache) do
+        if removed>=max_removals then break end
+
         local p=split(k,",",true)
         local x,y=p[1],p[2]
         if x<x1 or x>x2 or y<y1 or y>y2 then
             cell_cache[k]=nil
+            removed+=1
         end
     end
 end
