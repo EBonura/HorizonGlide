@@ -45,8 +45,7 @@ function draw_circle_arrow(tx,ty,col)
     if dx*dx+dy*dy<4 then return end
 
     -- oscillating orbit distance
-    local orbit_dist=1.5+sin(time()*1.5)*.2
-    local a=atan2(dx,dy)
+    local orbit_dist,a=1.5+sin(time()*1.5)*.2,atan2(dx,dy)
     local sx,sy=iso(px+cos(a)*orbit_dist,py+sin(a)*orbit_dist)
     sy-=player_ship.current_altitude*block_h
 
@@ -54,8 +53,7 @@ function draw_circle_arrow(tx,ty,col)
     local sa=atan2((dx-dy)*half_tile_width,(dx+dy)*half_tile_height)
 
     -- arrow triangle
-    local s=6
-    local b=sa+0.5
+    local s,b=6,sa+0.5
     draw_triangle(sx+cos(sa)*s,sy+sin(sa)*s*0.5,sx+cos(b-0.18)*s*.7,sy+sin(b-0.18)*s*.35,sx+cos(b+0.18)*s*.7,sy+sin(b+0.18)*s*.35,col)
 end
 
@@ -218,10 +216,7 @@ function _draw()
     else -- "death"
         draw_death()
     end
-    -- perf monitor with cache stats
-    local cache_size=0 for _ in pairs(cell_cache) do cache_size+=1 end
-
-    printh("mem: "..fmt2(stat(0)).." | cpu: "..fmt2(stat(1)).." | fps: "..tostr(stat(7)).." | cache: "..cache_size)
+    printh("mem:"..stat(0).." cpu:"..stat(1))
 end
 
 
@@ -238,9 +233,8 @@ function update_death()
     local el=time()-death_t
     
     -- transition to black screen phase after 2.5 seconds
-    if death_phase==0 and el>2.5 then 
-        death_phase=1
-        death_closed_at=time()
+    if death_phase==0 and el>2.5 then
+        death_phase,death_closed_at=1,time()
     end
     
     if btnp(❎) then init_game() return end
@@ -327,9 +321,8 @@ end
 
 
 function draw_minimap(x,y)
-    local ms=44
-    local step=64/ms  -- (wr*2)/ms with wr=32
-    local start_wx, start_wy = player_ship.x-32, player_ship.y-32
+    local ms,step=44,64/44  -- (wr*2)/ms with wr=32
+    local start_wx,start_wy=player_ship.x-32,player_ship.y-32
     rectfill(x-1,y-1,x+ms,y+ms,0)  -- background
 
     -- raster terrain
@@ -351,14 +344,11 @@ end
 
 
 
--- Function to draw sprites with vertical wave animation
-function draw_vertical_wave_sprites(sprite_start, x, y, width_in_sprites)
-    local width_px = width_in_sprites * 8
-    local wave_pos = (time() * 50) % (width_px + 40) - 20  -- 40=2*20
-    for strip_x = 0, width_px - 1 do
-        local distance = abs(strip_x - wave_pos)
-        local wave_offset = (distance < 20) and cos(distance * 0.025) * 2 or 0  -- 0.025=0.5/20
-        sspr((sprite_start % 16) * 8 + strip_x, flr(sprite_start / 16) * 8, 1, 8, x + strip_x, y - wave_offset, 1, 8)
+function draw_wave_spr(s,x,y,w)
+    local wp,t=w*8,time()*50
+    for i=0,wp-1 do
+        local d=abs(i-t%(wp+40)+20)
+        sspr((s%16)*8+i,flr(s/16)*8,1,8,x+i,y-(d<20 and cos(d*0.025)*2 or 0))
     end
 end
 
@@ -367,8 +357,8 @@ function draw_startup()
     draw_world()
 
     -- title
-    draw_vertical_wave_sprites(0,  title_x1,10,8)
-    draw_vertical_wave_sprites(16, title_x2,20,6)
+    draw_wave_spr(0,title_x1,10,8)
+    draw_wave_spr(16,title_x2,20,6)
 
     -- ui
     if startup_phase=="menu_select" then
@@ -528,16 +518,16 @@ function init_game()
     -- restore normal cache mode
     tile_manager.minimap_mode=false
 
-    game_state = "game"
+    game_state="game"
     
     -- Reset UI
-    floating_texts = {}
+    floating_texts={}
 
     -- reset particle system
     particle_sys.list={}
     
     -- game manager
-    game_manager = gm.new()
+    game_manager=gm.new()
     
     -- Reset player ship state
     player_ship.dead,player_ship.hp,player_ship.last_shot_time=false,player_ship.max_hp,time()+0.5
@@ -551,10 +541,10 @@ function init_game()
     -- wipe top texts
     ui_msg,ui_vis,ui_until,ui_rmsg="",0,0,""
 
-    collectibles = {}
+    collectibles={}
     for _=1,8 do  -- spawn 8 items
-        local a, d = rnd(), 15 + rnd(20)
-        add(collectibles, collectible.new(cos(a) * d, sin(a) * d))
+        local a,d=rnd(),15+rnd(20)
+        add(collectibles,collectible.new(cos(a)*d,sin(a)*d))
     end
 end
 
@@ -761,18 +751,16 @@ function floating_text.new(x, y, text, col)
 end
 
 function floating_text:update()
-    self.y += self.vy
-    self.vy *= 0.95  -- slow down over time
-    self.life -= 1
-    return self.life > 0
+    self.y+=self.vy
+    self.vy*=0.95  -- slow down over time
+    self.life-=1
+    return self.life>0
 end
 
 function floating_text:draw()
-    local w=#self.text*4
-    local x1=self.x-w/2
-    local y1=self.y
-    rectfill(x1-1,y1-1,x1+w,y1+5,0)
-    print(self.text,x1,y1,self.col)
+    local w,x1=#self.text*4,self.x-#self.text*2
+    rectfill(x1-1,self.y-1,x1+w,self.y+5,0)
+    print(self.text,x1,self.y,self.col)
 end
 
 -- PANEL CLASS
@@ -803,12 +791,10 @@ function panel:update()
     if self.anim_delay>0 then self.anim_delay-=1 return true end
 
     -- smooth move
-    if self.x!=self.target_x or self.y!=self.target_y then
-        self.x+=(self.target_x-self.x)*0.2
-        self.y+=(self.target_y-self.y)*0.2
-        if abs(self.x-self.target_x)<0.5 then self.x=self.target_x end
-        if abs(self.y-self.target_y)<0.5 then self.y=self.target_y end
-    end
+    self.x+=(self.target_x-self.x)*0.2
+    self.y+=(self.target_y-self.y)*0.2
+    if abs(self.x-self.target_x)<0.5 then self.x=self.target_x end
+    if abs(self.y-self.target_y)<0.5 then self.y=self.target_y end
 
     -- expand/contract
     self.expand=self.selected and min(self.expand+1,3) or max(self.expand-1,0)
@@ -1106,51 +1092,42 @@ end
 
 
 function circle_event:update()
-    local now = time()
-    local time_left = self.end_time - now
+    local time_left=self.end_time-time()
 
     -- timeout -> fail
-    if time_left <= 0 then
-        self.completed = true
-        self.success = false
-        ui_say("event failed", 3, 8)
+    if time_left<=0 then
+        self.completed,self.success=true,false
+        ui_say("event failed",3,8)
         ui_rmsg=""
         return
     end
 
     -- update right slot timer independently of left message
-    ui_rmsg = fmt2(max(0, time_left)).."s"
+    ui_rmsg=fmt2(max(0,time_left)).."s"
 
     -- rings
-    local circle = self.circles[self.current_target]
+    local circle=self.circles[self.current_target]
     if circle and not circle.collected then
-        local dx, dy = player_ship.x - circle.x, player_ship.y - circle.y
-        local dist = dist_trig(dx, dy)
-
-        if dist < circle.radius then
-            circle.collected = true
+        local dx,dy=player_ship.x-circle.x,player_ship.y-circle.y
+        if dist_trig(dx,dy)<circle.radius then
+            circle.collected=true
             sfx(61)
-
-            -- heal 10hp per ring
-            local health_gain = 10
-            player_ship.hp = min(player_ship.hp + health_gain, player_ship.max_hp)
+            player_ship.hp=min(player_ship.hp+10,player_ship.max_hp)
 
             -- bonus time (not on last)
-            if self.current_target < #self.circles then
-                self.end_time += self.recharge_seconds
-                local sx, sy = player_ship:get_screen_pos()
+            if self.current_target<#self.circles then
+                self.end_time+=self.recharge_seconds
                 pop("+"..fmt2(self.recharge_seconds).."s",-10)
                 pop("+10hp",-20,11)
             end
 
-            self.current_target += 1
+            self.current_target+=1
 
-            if self.current_target > #self.circles then
+            if self.current_target>#self.circles then
                 -- success - full heal on completion
-                player_ship.hp = player_ship.max_hp
+                player_ship.hp=player_ship.max_hp
                 local award=#self.circles*100+500
                 self.completed,self.success=true,true
-                local sx,sy=player_ship:get_screen_pos()
                 game_manager.player_score+=award
                 pop("+"..award,-10,7)
                 pop("full hp!",-20,11)
@@ -1263,7 +1240,7 @@ end
 -- MINE CLASS
 mine={}
 mine.__index=mine
-function mine.new(x,y,owner)return setmetatable({x=x,y=y,owner=owner,life=180},mine)end
+function mine.new(x,y,owner)return setmetatable({x=x,y=y,owner=owner},mine)end
 function mine:update()
     local targets=self.owner==player_ship and enemies or{player_ship}
     for t in all(targets)do
@@ -1279,17 +1256,17 @@ function mine:update()
 end
 function mine:draw()
     local sx,sy=iso(self.x,self.y)
-    local gy=sy
     sy-=terrain_h(self.x,self.y,true)*block_h
+    local col=self.owner==player_ship and 12 or 8
     -- ground range indicator (dotted ellipse)
     local ring_r=0.7*half_tile_width*2
     for a=0,1,0.08 do
-        pset(sx+cos(a)*ring_r,gy+sin(a)*ring_r*0.5,8)
+        pset(sx+cos(a)*ring_r,sy+sin(a)*ring_r*0.5,col)
     end
     -- pulsing bomb
-    local r=3+sin(time()*6+self.life/20)
+    local r=4+sin(time()*6+self.x+self.y)*1.5
     circfill(sx,sy,r,7)
-    circfill(sx,sy,r/2,8)
+    circfill(sx,sy,r/2,col)
 end
 
 -- SHIP CLASS
@@ -1329,8 +1306,8 @@ function ship.new(start_x, start_y, is_enemy)
         ai_phase = is_enemy and rnd(6) or 0,
         max_ammo = is_enemy and 9999 or 100,
         ammo = is_enemy and 9999 or 50,
-        mines = is_enemy and 99 or 7,
-        max_mines = 15,
+        mines = is_enemy and 9999 or 7,
+        max_mines = is_enemy and 9999 or 15,
         last_shot_time = 0,
         -- AI state machine
         ai_state = is_enemy and "approach" or nil,
@@ -1368,6 +1345,12 @@ function ship:ai_update()
     if mode and self:update_targeting() and (not self.last_shot_time or time()-self.last_shot_time>self.fire_rate) then
         self:fire_at()
         self.last_shot_time=time()
+    end
+
+    -- drop mine when fleeing and close to player
+    if not mode and dist<8 and self.mines>0 and rnd()<0.15 then
+        add(mines,mine.new(self.x,self.y,self))
+        self.mines-=1
     end
 end
 
