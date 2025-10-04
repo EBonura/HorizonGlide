@@ -187,10 +187,9 @@ function _update()
         prune_update(floating_texts)
         prune_update(mines)
 
-        if game_manager.display_score < game_manager.player_score then
-            local diff = game_manager.player_score - game_manager.display_score
-            local step = flr((diff+9)/10)
-            game_manager.display_score += (diff<10) and diff or step
+        if game_manager.display_score<game_manager.player_score then
+            local diff=game_manager.player_score-game_manager.display_score
+            game_manager.display_score+=diff<10 and diff or flr((diff+9)/10)
         end
 
         ui_tick()
@@ -383,9 +382,7 @@ function update_customize()
     local d=(btnp(⬆️) and -1) or (btnp(⬇️) and 1) or 0
     if d!=0 then
         customization_panels[customize_cursor].selected=false
-        customize_cursor+=d
-        if customize_cursor<1 then customize_cursor=#customization_panels end
-        if customize_cursor>#customization_panels then customize_cursor=1 end
+        customize_cursor=(customize_cursor+d-1)%#customization_panels+1
         customization_panels[customize_cursor].selected=true
     end
 
@@ -1590,10 +1587,8 @@ end
 
 function ui_tick()
     -- tween box height
-    if ui_box_h != ui_box_target_h then
-        ui_box_h += (ui_box_target_h - ui_box_h) * 0.2
-        if abs(ui_box_h - ui_box_target_h) < 0.5 then ui_box_h = ui_box_target_h end
-    end
+    ui_box_h+=(ui_box_target_h-ui_box_h)*0.2
+    if abs(ui_box_h-ui_box_target_h)<0.5 then ui_box_h=ui_box_target_h end
 
     -- nothing to type yet or box not expanded
     if ui_msg=="" or ui_box_h<=25 then return end
