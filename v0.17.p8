@@ -95,7 +95,7 @@ function _init()
     view_range,half_tile_width,half_tile_height,block_h=0,12,6,2
 
     -- containers & cursors
-    enemies,collectibles,projectiles,floating_texts,ws,customization_panels={},{},{},{},{},{}
+    enemies,collectibles,projectiles,floating_texts,ws,customization_panels,mines={},{},{},{},{},{},{}
     customize_cursor=1
 
     -- player
@@ -189,6 +189,7 @@ function _update()
         update_projectiles()
         manage_collectibles()
         prune_update(floating_texts)
+        prune_update(mines)
 
         if game_manager.display_score < game_manager.player_score then
             local diff = game_manager.player_score - game_manager.display_score
@@ -669,6 +670,9 @@ function draw_game()
     -- floating texts
     draw_all(floating_texts)
 
+    -- mines
+    draw_all(mines)
+
     -- ui (top + bottom)
     draw_ui()
 end
@@ -680,7 +684,7 @@ function draw_segmented_bar(x, y, value, max_value, filled_col, empty_col)
     local filled=flr(value*15/max_value)
     for i=0,14 do
         local s=x+i*4
-        rectfill(s,y,s+2,y+2,(i<filled) and filled_col or empty_col)
+        rectfill(s,y,s+2,y+1,(i<filled) and filled_col or empty_col)
     end
 end
 
@@ -731,8 +735,8 @@ function draw_ui()
 
     local health_col = player_ship.hp > 30 and 11 or 8
     draw_segmented_bar(4, 120, player_ship.hp, 100, health_col, 5)
-
-    draw_segmented_bar(4, 124, player_ship.ammo, player_ship.max_ammo, 12, 5)
+    draw_segmented_bar(4, 123, player_ship.ammo, player_ship.max_ammo, 12, 5)
+    draw_segmented_bar(4, 126, player_ship.mines, player_ship.max_mines, 9, 5)
 
     local score_text = "score: " .. flr(game_manager.display_score)
     print(score_text, 127 - #score_text * 4, 121, 10)
@@ -989,8 +993,9 @@ function gm:update()
         self.tut_moved = self.tut_moved or btn(⬆️) or btn(⬇️) or btn(⬅️) or btn(➡️)
         self.tut_shot = self.tut_shot or btn(❎)
         self.tut_collected = self.tut_collected or player_ship.ammo > 50
-        
-        -- Check what hasn't been done yet (priority: move > shoot > collect)
+        self.tut_mine = self.tut_mine or player_ship.mines < 7
+
+        -- Check what hasn't been done yet (priority: move > shoot > collect > mine)
         local new_msg = nil
         if not self.tut_moved then
             new_msg = "arrow keys to move"
@@ -998,6 +1003,8 @@ function gm:update()
             new_msg = "❎ tO sHOOT"
         elseif not self.tut_collected then
             new_msg = "cOLLECT aMMO"
+        elseif not self.tut_mine then
+            new_msg = "🅾️ tO dROP mINE"
         elseif not self.tut_complete then
             -- Show completion message once
             new_msg = "hORIZON gLIDE bEGINS!"
@@ -1253,6 +1260,37 @@ function manage_collectibles()
 end
 
 
+-- MINE CLASS
+mine={}
+mine.__index=mine
+function mine.new(x,y,owner)return setmetatable({x=x,y=y,owner=owner,life=180},mine)end
+function mine:update()
+    local targets=self.owner==player_ship and enemies or{player_ship}
+    for t in all(targets)do
+        local dx,dy=t.x-self.x,t.y-self.y
+        if dx*dx+dy*dy<0.5 then
+            t.hp-=20
+            particle_sys:explode(self.x,self.y,-terrain_h(self.x,self.y,true)*block_h,1.5)
+            sfx(62)
+            return false
+        end
+    end
+    return true
+end
+function mine:draw()
+    local sx,sy=iso(self.x,self.y)
+    local gy=sy
+    sy-=terrain_h(self.x,self.y,true)*block_h
+    -- ground range indicator (dotted ellipse)
+    local ring_r=0.7*half_tile_width*2
+    for a=0,1,0.08 do
+        pset(sx+cos(a)*ring_r,gy+sin(a)*ring_r*0.5,8)
+    end
+    -- pulsing bomb
+    local r=3+sin(time()*6+self.life/20)
+    circfill(sx,sy,r,7)
+    circfill(sx,sy,r/2,8)
+end
 
 -- SHIP CLASS
 ship = {}
@@ -1291,6 +1329,8 @@ function ship.new(start_x, start_y, is_enemy)
         ai_phase = is_enemy and rnd(6) or 0,
         max_ammo = is_enemy and 9999 or 100,
         ammo = is_enemy and 9999 or 50,
+        mines = is_enemy and 99 or 7,
+        max_mines = 15,
         last_shot_time = 0,
         -- AI state machine
         ai_state = is_enemy and "approach" or nil,
@@ -1397,6 +1437,11 @@ function ship:update()
         if btn(❎) and (not self.last_shot_time or time()-self.last_shot_time>self.fire_rate) then
             self:fire_at()
             self.last_shot_time=time()
+        end
+        -- drop mine
+        if btnp(🅾️) and self.mines>0 then
+            add(mines,mine.new(self.x,self.y,self))
+            self.mines-=1
         end
     end
 
