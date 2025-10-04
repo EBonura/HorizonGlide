@@ -337,9 +337,257 @@ function draw_world_v4()
     end
 end
 
+-- approach 5: eliminate table lookups by storing pre-calculated screen coords
+function draw_world_v5()
+    -- pre-calculate everything including screen coordinates
+    local tiles={}
+    local idx=1
+    local htw,hth,co_x,co_y,bh=12,6,64,64,2
+
+    for x=-7,7 do
+        for y=-7,7 do
+            local top,side,dark,h=terrain(x,y)
+            local bsx,bsy=(x-y)*htw,(x+y)*hth
+            tiles[idx]={top,side,dark,h,co_x+bsx,co_y+bsy,x,y}
+            idx+=1
+        end
+    end
+
+    -- draw water - no iso calculation
+    for i=1,225 do
+        local t=tiles[i]
+        if t[4]<=0 then
+            diamond_v2(t[5],t[6],t[1])
+            line(t[5]-12,t[6],t[5]+12,t[6],(t[4]<=-2) and 12 or 1)
+        end
+    end
+
+    -- draw land - pre-calculated coords
+    for i=1,225 do
+        local t=tiles[i]
+        if t[4]>0 then
+            local sx,sy,h=t[5],t[6],t[4]
+            local hp=h*2
+            local sy2=sy-hp
+            local cy=70+t[6]-64-hp
+
+            -- neighbor lookup
+            local x,y=t[7],t[8]
+            local hs,he=0,0
+            for j=1,225 do
+                local nt=tiles[j]
+                if nt[7]==x and nt[8]==y+1 then hs=nt[4] end
+                if nt[7]==x+1 and nt[8]==y then he=nt[4] end
+            end
+
+            if hs<h then
+                local lb=sx-12
+                for k=0,hp do line(lb,sy2+k,sx,cy+k,t[2]) end
+            end
+            if he<h then
+                local rb=sx+12
+                for k=0,hp do line(rb,sy2+k,sx,cy+k,t[3]) end
+            end
+            diamond_v2(sx,sy2,t[1])
+        end
+    end
+end
+
+-- approach 6: unroll diamond completely inline
+function draw_world_v6()
+    local tiles={}
+    for x=-7,7 do
+        for y=-7,7 do
+            local top,side,dark,h=terrain(x,y)
+            tiles[x..","..y]={top,side,dark,h}
+        end
+    end
+
+    local htw,hth,co_x,co_y,bh=12,6,64,64,2
+
+    -- draw water with fully inlined diamond
+    for x=-7,7 do
+        for y=-7,7 do
+            local t=tiles[x..","..y]
+            local h=t[4]
+            if h<=0 then
+                local bsx,bsy=(x-y)*htw,(x+y)*hth
+                local sx,sy=co_x+bsx,co_y+bsy
+                -- inline diamond
+                line(sx-12,sy,sx+12,sy,t[1])
+                line(sx-10,sy-1,sx+10,sy-1,t[1])
+                line(sx-10,sy+1,sx+10,sy+1,t[1])
+                line(sx-8,sy-2,sx+8,sy-2,t[1])
+                line(sx-8,sy+2,sx+8,sy+2,t[1])
+                line(sx-6,sy-3,sx+6,sy-3,t[1])
+                line(sx-6,sy+3,sx+6,sy+3,t[1])
+                line(sx-4,sy-4,sx+4,sy-4,t[1])
+                line(sx-4,sy+4,sx+4,sy+4,t[1])
+                line(sx-2,sy-5,sx+2,sy-5,t[1])
+                line(sx-2,sy+5,sx+2,sy+5,t[1])
+                line(sx,sy-6,sx,sy-6,t[1])
+                line(sx,sy+6,sx,sy+6,t[1])
+                line(sx-htw,sy,sx+htw,sy,(h<=-2) and 12 or 1)
+            end
+        end
+    end
+
+    -- draw land with inline diamond
+    for x=-7,7 do
+        for y=-7,7 do
+            local t=tiles[x..","..y]
+            local h=t[4]
+            if h>0 then
+                local bsx,bsy=(x-y)*htw,(x+y)*hth
+                local sx,sy=co_x+bsx,co_y+bsy
+                local hp=h*bh
+                local sy2=sy-hp
+                local cy=co_y+bsy+hth-hp
+
+                local ts=tiles[x..","..(y+1)]
+                local te=tiles[(x+1)..","..y]
+                local hs=ts and ts[4] or 0
+                local he=te and te[4] or 0
+
+                if hs<h then
+                    local lb=sx-htw
+                    for i=0,hp do line(lb,sy2+i,sx,cy+i,t[2]) end
+                end
+                if he<h then
+                    local rb=sx+htw
+                    for i=0,hp do line(rb,sy2+i,sx,cy+i,t[3]) end
+                end
+                -- inline diamond
+                line(sx-12,sy2,sx+12,sy2,t[1])
+                line(sx-10,sy2-1,sx+10,sy2-1,t[1])
+                line(sx-10,sy2+1,sx+10,sy2+1,t[1])
+                line(sx-8,sy2-2,sx+8,sy2-2,t[1])
+                line(sx-8,sy2+2,sx+8,sy2+2,t[1])
+                line(sx-6,sy2-3,sx+6,sy2-3,t[1])
+                line(sx-6,sy2+3,sx+6,sy2+3,t[1])
+                line(sx-4,sy2-4,sx+4,sy2-4,t[1])
+                line(sx-4,sy2+4,sx+4,sy2+4,t[1])
+                line(sx-2,sy2-5,sx+2,sy2-5,t[1])
+                line(sx-2,sy2+5,sx+2,sy2+5,t[1])
+                line(sx,sy2-6,sx,sy2-6,t[1])
+                line(sx,sy2+6,sx,sy2+6,t[1])
+            end
+        end
+    end
+end
+
+-- approach 7: reduce string concatenation overhead
+function draw_world_v7()
+    -- use 2d array instead of string keys
+    local tiles={}
+    for x=-7,7 do
+        tiles[x]={}
+        for y=-7,7 do
+            local top,side,dark,h=terrain(x,y)
+            tiles[x][y]={top,side,dark,h}
+        end
+    end
+
+    local htw,hth,co_x,co_y,bh=12,6,64,64,2
+
+    -- draw water
+    for x=-7,7 do
+        for y=-7,7 do
+            local t=tiles[x][y]
+            if t[4]<=0 then
+                local bsx,bsy=(x-y)*htw,(x+y)*hth
+                local sx,sy=co_x+bsx,co_y+bsy
+                diamond_v2(sx,sy,t[1])
+                line(sx-htw,sy,sx+htw,sy,(t[4]<=-2) and 12 or 1)
+            end
+        end
+    end
+
+    -- draw land
+    for x=-7,7 do
+        for y=-7,7 do
+            local t=tiles[x][y]
+            if t[4]>0 then
+                local bsx,bsy=(x-y)*htw,(x+y)*hth
+                local sx,sy=co_x+bsx,co_y+bsy
+                local h=t[4]
+                local hp=h*bh
+                local sy2=sy-hp
+                local cy=co_y+bsy+hth-hp
+
+                local hs=(y<7 and tiles[x][y+1]) and tiles[x][y+1][4] or 0
+                local he=(x<7 and tiles[x+1]) and tiles[x+1][y][4] or 0
+
+                if hs<h then
+                    local lb=sx-htw
+                    for i=0,hp do line(lb,sy2+i,sx,cy+i,t[2]) end
+                end
+                if he<h then
+                    local rb=sx+htw
+                    for i=0,hp do line(rb,sy2+i,sx,cy+i,t[3]) end
+                end
+                diamond_v2(sx,sy2,t[1])
+            end
+        end
+    end
+end
+
+-- approach 8: 2d array + eliminate redundant calculations
+function draw_world_v8()
+    local tiles={}
+    for x=-7,7 do
+        tiles[x]={}
+        for y=-7,7 do
+            local top,side,dark,h=terrain(x,y)
+            tiles[x][y]={top,side,dark,h}
+        end
+    end
+
+    -- draw water
+    for x=-7,7 do
+        for y=-7,7 do
+            local t=tiles[x][y]
+            if t[4]<=0 then
+                local sx,sy=64+(x-y)*12,64+(x+y)*6
+                diamond_v2(sx,sy,t[1])
+                line(sx-12,sy,sx+12,sy,(t[4]<=-2) and 12 or 1)
+            end
+        end
+    end
+
+    -- draw land - pre-calc more values
+    for x=-7,7 do
+        local tx=tiles[x]
+        local tnx=tiles[x+1]
+        for y=-7,7 do
+            local t=tx[y]
+            if t[4]>0 then
+                local h=t[4]
+                local sx,sy=64+(x-y)*12,64+(x+y)*6
+                local hp=h*2
+                local sy2=sy-hp
+                local cy=64+(x+y)*6+6-hp
+
+                local hs=(y<7 and tx[y+1]) and tx[y+1][4] or 0
+                local he=(tnx and tnx[y]) and tnx[y][4] or 0
+
+                if hs<h then
+                    local lb=sx-12
+                    for i=0,hp do line(lb,sy2+i,sx,cy+i,t[2]) end
+                end
+                if he<h then
+                    local rb=sx+12
+                    for i=0,hp do line(rb,sy2+i,sx,cy+i,t[3]) end
+                end
+                diamond_v2(sx,sy2,t[1])
+            end
+        end
+    end
+end
+
 -- test setup
 current_approach=1
-approaches={"v1: 0.3692","v2: 0.3295","v3: 0.3066","v4: numeric"}
+approaches={"v1: 0.3692","v2: 0.3295","v3: 0.3066","v7: 0.303","v8: precalc2"}
 
 function _init()
     -- pre-warm cache
@@ -353,7 +601,7 @@ end
 function _update()
     -- switch approaches with arrow keys
     if btnp(0) then current_approach=max(1,current_approach-1) end
-    if btnp(1) then current_approach=min(4,current_approach+1) end
+    if btnp(1) then current_approach=min(5,current_approach+1) end
 end
 
 function _draw()
@@ -366,8 +614,10 @@ function _draw()
         draw_world_v2()
     elseif current_approach==3 then
         draw_world_v3()
+    elseif current_approach==4 then
+        draw_world_v7()
     else
-        draw_world_v4()
+        draw_world_v8()
     end
 
     -- stats

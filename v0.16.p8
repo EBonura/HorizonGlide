@@ -39,6 +39,19 @@ function draw_all(t)   for o in all(t) do o:draw()   end end
 function update_all(t) for o in all(t) do o:update() end end
 function prune_update(t) for i=#t,1,-1 do if not t[i]:update() then deli(t,i) end end end
 
+function draw_edge_arrow(tx,ty,col)
+    local tsx,tsy=iso(tx,ty)
+    tsy-=terrain_h(tx,ty,true)*block_h
+    if tsx<0 or tsx>128 or tsy<0 or tsy>128 then
+        local ex=mid(6,tsx,122)
+        local ey=mid(12,tsy,116)
+        local dx,dy=tx-player_ship.x,ty-player_ship.y
+        local sa=atan2((dx-dy)*half_tile_width,(dx+dy)*half_tile_height)
+        local b=sa+0.5
+        draw_triangle(ex+cos(sa)*7,ey+sin(sa)*3.5,ex+cos(b-.18)*4.5,ey+sin(b-.18)*2.25,ex+cos(b+.18)*4.5,ey+sin(b+.18)*2.25,col)
+    end
+end
+
 
 -- terrain color lookup tables (top, side, dark triplets; height thresholds)
 TERRAIN_PAL_STR = "\1\0\0\12\1\1\15\4\2\3\1\0\11\3\1\4\2\0\6\5\0\7\6\5"
@@ -1199,7 +1212,7 @@ function circle_event:draw()
     -- direction arrow to current target
     local target=self.circles[self.current_target]
     if target and not target.collected then
-        draw_arrow_to(target.x, target.y)
+        draw_edge_arrow(target.x,target.y,8)
     end
 end
 
@@ -1214,18 +1227,19 @@ end
 
 function collectible:update()
     if self.collected then return false end
-    local dx, dy = player_ship.x - self.x, player_ship.y - self.y
-    local dist2 = dist_trig(dx, dy)
-    if dist2 > 20 then return false end
-    
-    if dist2 < 1 then
-        self.collected = true
+    local dx,dy=player_ship.x-self.x,player_ship.y-self.y
+    local dist2=dist_trig(dx,dy)
+    if dist2>20 then return false end
+
+    if dist2<1 then
+        self.collected=true
         sfx(61)
-        player_ship.ammo = min(player_ship.ammo + 10, player_ship.max_ammo)
+        player_ship.ammo=min(player_ship.ammo+10,player_ship.max_ammo)
         pop("+10ammo",-10,12)
-        game_manager.player_score += 25
+        game_manager.player_score+=25
         return false
     end
+
     return true
 end
 
@@ -1242,9 +1256,9 @@ end
 function manage_collectibles()
     -- remove far ones
     prune_update(collectibles)
-    
+
     -- spawn new ones if needed
-    while #collectibles < 10 do  -- maintain 6 items
+    while #collectibles < 15 do
         local a, d = rnd(), 8 + rnd(15)
         local x, y = player_ship.x + cos(a) * d, player_ship.y + sin(a) * d
         add(collectibles, collectible.new(x, y))
@@ -1290,7 +1304,10 @@ function ship.new(start_x, start_y, is_enemy)
         ai_phase = is_enemy and rnd(6) or 0,
         max_ammo = is_enemy and 9999 or 100,
         ammo = is_enemy and 9999 or 50,
-        last_shot_time = 0
+        last_shot_time = 0,
+        -- AI state machine
+        ai_state = is_enemy and "approach" or nil,
+        charge_timer = 0
     }, ship)
 end
 
@@ -1299,11 +1316,10 @@ function ship:set_altitude()
 end
 
 function ship:ai_update()
-    -- base vector to player
     local dx,dy=player_ship.x-self.x,player_ship.y-self.y
     local dist=dist_trig(dx,dy)
 
-    -- chase/flee mode (health ratio check once)
+    -- chase/flee mode (health ratio check)
     local q=self.hp/self.max_hp
     local mode=(q<=0.3 and dist>15) or (q>0.3 and (dist>20 or ((time()+self.ai_phase)%6)<3))
     if not mode then dx,dy=-dx,-dy end
@@ -1321,11 +1337,13 @@ function ship:ai_update()
     local m=dist_trig(dx,dy)
     if m>0.1 then self.vx+=dx*self.accel/m self.vy+=dy*self.accel/m end
 
-    -- fire
+    -- fire (instant for relentless combat)
     if mode and self:update_targeting() and (not self.last_shot_time or time()-self.last_shot_time>self.fire_rate) then
-        self:fire_at() self.last_shot_time=time()
+        self:fire_at()
+        self.last_shot_time=time()
     end
 end
+
 
 
 
@@ -1634,34 +1652,17 @@ end
 
 
 function combat_event:draw()
+    for e in all(enemies) do
+        local q=e.hp/e.max_hp
+        local dist=dist_trig(player_ship.x-e.x,player_ship.y-e.y)
+        local mode=(q<=0.3 and dist>15) or (q>0.3 and (dist>20 or ((time()+e.ai_phase)%6)<3))
+        local col=mode and 8 or 9
+        draw_edge_arrow(e.x,e.y,col)
+    end
     draw_all(enemies)
-    for e in all(enemies) do draw_arrow_to(e.x,e.y) end
 end
 
 
-function draw_arrow_to(tx,ty)
-    local px,py=player_ship.x,player_ship.y
-    local dx,dy=tx-px,ty-py
-    if dx*dx+dy*dy<4 then return end
-
-    -- oscillating orbit distance
-    local orbit_dist = 1.5 + sin(time() * 3) * .2
-    local a=atan2(dx,dy)
-    local sx,sy=iso(px+cos(a)*orbit_dist, py+sin(a)*orbit_dist)
-    sy-=player_ship.current_altitude*block_h
-
-    -- screen-facing angle from iso delta
-    local sa=atan2((dx-dy)*half_tile_width, (dx+dy)*half_tile_height)
-
-    -- arrow triangle (size 6, color 8)
-    local s=6
-    local b=sa+0.5
-    draw_triangle(
-        sx+cos(sa)*s,       sy+sin(sa)*s*0.5,
-        sx+cos(b-0.18)*s*.7, sy+sin(b-0.18)*s*.35,
-        sx+cos(b+0.18)*s*.7, sy+sin(b+0.18)*s*.35,
-        8)
-end
 
 
 
