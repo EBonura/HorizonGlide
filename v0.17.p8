@@ -11,8 +11,8 @@ function iso(x,y) return cam_offset_x+(x-y)*half_tile_width, cam_offset_y+(x+y)*
 
 function fmt2(n)
     local s=flr(n*100+0.5)
-    local neg=s<0 if neg then s=-s end
-    return (neg and "-" or "")..flr(s/100).."."..sub("0"..(s%100),-2)
+    local neg=s<0 if(neg)s=-s
+    return(neg and"-"or"")..flr(s/100).."."..sub("0"..(s%100),-2)
 end
 
 function opt_text(o)
@@ -27,8 +27,8 @@ function draw_triangle(l,t,c,m,r,b,col)
     local e,j=l,(r-l)/(b-t)
     while m do
         local i=(c-l)/(m-t)
-        for t=flr(t),min(flr(m)-1,127) do
-        line(l,t,e,t,col)
+        for y=flr(t),min(flr(m)-1,127) do
+        line(l,y,e,y,col)
         l+=i e+=j
         end
         l,t,m,c,b=c,m,b,r
@@ -95,8 +95,8 @@ function _init()
     view_range,half_tile_width,half_tile_height,block_h=0,12,6,2
 
     -- containers & cursors
-    enemies,collectibles,projectiles,floating_texts,ws,menu_panels,customization_panels={},{},{},{},{},{},{}
-    customize_cursor,menu_cursor=1,1
+    enemies,collectibles,projectiles,floating_texts,ws,customization_panels={},{},{},{},{},{}
+    customize_cursor=1
 
     -- player
     player_ship=ship.new(0,0)
@@ -131,8 +131,6 @@ end
 
 
 function _update()
-    terrain_calls_this_frame=0  -- reset terrain generation budget
-
     if game_state=="startup" then
         -- intro timer + gentle drift
         startup_timer+=1
@@ -164,8 +162,8 @@ function _update()
                 startup_view_range+=0.5
                 view_range=flr(startup_view_range)
             end
-            if title_x1<20 then title_x1+=6 end
-            if title_x2>68 then title_x2-=6 end
+            if(title_x1<20)title_x1+=6
+            if(title_x2>68)title_x2-=6
             if startup_view_range>=7 and title_x1>=20 and title_x2<=68 then
                 startup_phase="menu_select"
                 init_menu_select()
@@ -230,9 +228,7 @@ end
 -- death flow (digital break effect)
 function enter_death()
     music(34)
-    game_state="death"
-    death_t=time()
-    death_cd=10
+    game_state,death_t,death_cd="death",time(),10
     death_phase,death_closed_at=0,nil
     ui_msg,ui_rmsg,ui_box_target_h="","",6
 end
@@ -260,10 +256,8 @@ function draw_death()
         draw_world()
         -- horizontal tears
         if el > 0.2 then
-            for i=1,el*5 do
-                local y = flr(rnd(128))
-                local h = 1 + flr(rnd(3))
-                local shift = flr(rnd(20)) - 10
+            for _=1,el*5 do
+                local y,h,shift=flr(rnd(128)),1+flr(rnd(3)),flr(rnd(20))-10
                 
                 -- shift this horizontal band
                 for dy=0,h-1 do
@@ -281,10 +275,8 @@ function draw_death()
         -- digital artifacts (blocks)
         if el > 0.8 then
             local blocks = (el - 0.8) * 50
-            for i=1,blocks do
-                local x = flr(rnd(16)) * 8
-                local y = flr(rnd(16)) * 8
-                local c = rnd() < el/3 and 0 or flr(rnd(16))
+            for _=1,blocks do
+                local x,y,c=flr(rnd(16))*8,flr(rnd(16))*8,rnd()<el/3 and 0or flr(rnd(16))
                 rectfill(x, y, x+7, y+7, c)
             end
         end
@@ -292,7 +284,7 @@ function draw_death()
         -- black takeover
         if el > 1.5 then
             local pct = (el - 1.5) * 3000
-            for i=1,pct do
+            for _=1,pct do
                 pset(flr(rnd(128)), flr(rnd(128)), 0)
             end
         end
@@ -458,8 +450,7 @@ end
 
 function regenerate_world_live()
     -- new terrain + clear cache
-    terrain_perm=generate_permutation(current_seed)
-    cell_cache={}
+    terrain_perm,cell_cache=generate_permutation(current_seed),{}
 
     -- rebuild tiles around current ship position
     tile_manager:init()
@@ -548,11 +539,7 @@ function init_game()
     game_manager = gm.new()
     
     -- Reset player ship state
-    player_ship.dead = false
-    player_ship.hp = player_ship.max_hp
-    
-    -- prevent immediate shooting
-    player_ship.last_shot_time = time() + 0.5
+    player_ship.dead,player_ship.hp,player_ship.last_shot_time=false,player_ship.max_hp,time()+0.5
     
     -- Update tiles for full view range
     tile_manager:update_player_position(player_ship.x, player_ship.y)
@@ -564,7 +551,7 @@ function init_game()
     ui_msg,ui_vis,ui_until,ui_rmsg="",0,0,""
 
     collectibles = {}
-    for i = 1, 8 do  -- spawn 8 items
+    for _=1,8 do  -- spawn 8 items
         local a, d = rnd(), 15 + rnd(20)
         add(collectibles, collectible.new(cos(a) * d, sin(a) * d))
     end
@@ -611,9 +598,9 @@ function draw_world()
             local wx,wy=s.x+cos(a)*s.r,s.y+sin(a)*s.r
             local h=terrain_h(flr(wx),flr(wy))
             if h<=0 then
-                local px,py=iso(wx,wy)
-                if lx then line(lx,ly,px,py,(h<=-2) and 12 or 7) end
-                lx,ly=px,py
+                local rx,ry=iso(wx,wy)
+                if lx then line(lx,ly,rx,ry,(h<=-2) and 12 or 7) end
+                lx,ly=rx,ry
             else lx=nil end
         end
         if s.life<=0 then deli(ws,i) end
@@ -842,9 +829,7 @@ function panel:draw()
     rect(dx-1,dy-1,dx+dw,dy+dh,self.col)
 
     -- centered text
-    local tx=dx+(dw-#self.text*4)/2
-    local ty=dy+(dh-5)/2
-    local tcol=self.selected and self.col or 7
+    local tx,ty,tcol=dx+(dw-#self.text*4)/2,dy+(dh-5)/2,self.selected and self.col or 7
     print(self.text, tx, ty, tcol)
 
     -- draw arrows for option panels (but not action buttons)
@@ -988,13 +973,8 @@ function gm.new()
 end
 
 function gm:reset()
-    self.state="idle"
-    self.current_event=nil
-    self.idle_start_time=nil
-    self.next_event_index=1
-    self.player_score=0
-    self.display_score=0
-    self.difficulty_level=0
+    self.state,self.current_event,self.idle_start_time="idle",nil,nil
+    self.next_event_index,self.player_score,self.display_score,self.difficulty_level=1,0,0,0
 end
 
 function gm:update()
@@ -1108,7 +1088,7 @@ function circle_event.new()
 
     self.end_time=time()+self.base_time
     ui_say("cOLLECT "..#self.circles.." cIRCLES!",3,8)
-    ui_rmsg=fmt2(self.base_time).."s"
+    ui_rmsg=flr(self.base_time).."s"
     return self
 end
 
@@ -1623,8 +1603,7 @@ function combat_event.new()
     enemies={}
     for i=1,n do
         local a,d=rnd(1),10+rnd(5)
-        local ex=player_ship.x+cos(a)*d
-        local ey=player_ship.y+sin(a)*d
+        local ex,ey=player_ship.x+cos(a)*d,player_ship.y+sin(a)*d
         local e=ship.new(ex,ey,true) e.hp=50
         add(enemies,e)
     end
