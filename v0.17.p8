@@ -136,9 +136,7 @@ function _update()
         player_ship.y+=player_ship.vy
 
         -- face along motion
-        local svx=(player_ship.vx-player_ship.vy)
-        local svy=(player_ship.vx+player_ship.vy)*0.5
-        player_ship.angle=atan2(svx,svy)
+        player_ship.angle=atan2(player_ship.vx-player_ship.vy,(player_ship.vx+player_ship.vy)*0.5)
 
         -- hover-lock to terrain
         player_ship:set_altitude()
@@ -231,72 +229,70 @@ end
 
 function update_death()
     local el=time()-death_t
-    
+
     -- transition to black screen phase after 2.5 seconds
     if death_phase==0 and el>2.5 then
         death_phase,death_closed_at=1,time()
     end
-    
-    if btnp(❎) then init_game() return end
+
+    if death_phase==2 and btnp(❎) then init_game() return end
     if time()-death_t>death_cd then _init() end
 end
 
 function draw_death()
     local el=time()-death_t
-    
+
     -- digital break effect phase
     if death_phase==0 then
         -- draw the game world first
         cls(1)
         draw_world()
         -- horizontal tears
-        if el > 0.2 then
+        if el>0.2 then
             for _=1,el*5 do
                 local y,h,shift=flr(rnd(128)),1+flr(rnd(3)),flr(rnd(20))-10
-                
+
                 -- shift this horizontal band
                 for dy=0,h-1 do
-                    if y+dy < 128 then
+                    if y+dy<128 then
                         for x=0,127 do
-                            local src_x = (x - shift) % 128
-                            local c = pget(src_x, y+dy)
-                            pset(x, y+dy, c)
+                            local src_x=(x-shift)%128
+                            local c=pget(src_x,y+dy)
+                            pset(x,y+dy,c)
                         end
                     end
                 end
             end
         end
-        
+
         -- digital artifacts (blocks)
-        if el > 0.8 then
-            local blocks = (el - 0.8) * 50
+        if el>0.8 then
+            local blocks=(el-0.8)*50
             for _=1,blocks do
-                local x,y,c=flr(rnd(16))*8,flr(rnd(16))*8,rnd()<el/3 and 0or flr(rnd(16))
-                rectfill(x, y, x+7, y+7, c)
+                local x,y,c=flr(rnd(16))*8,flr(rnd(16))*8,rnd()<el/3 and 0 or flr(rnd(16))
+                rectfill(x,y,x+7,y+7,c)
             end
         end
-        
+
         -- black takeover
-        if el > 1.5 then
-            local pct = (el - 1.5) * 3000
+        if el>1.5 then
+            local pct=(el-1.5)*3000
             for _=1,pct do
-                pset(flr(rnd(128)), flr(rnd(128)), 0)
+                pset(flr(rnd(128)),flr(rnd(128)),0)
             end
         end
-    
+
     -- fully black -> show death screen UI
     else
         cls(0)
-        
+
         -- wait half second before showing UI
         local t=time()-death_closed_at
-        if t < 0.5 then
-            -- just black screen, no UI yet
-            return
-        end
-        
+        if t<0.5 then return end
+
+        death_phase=2  -- mark UI as shown, enable restart
         local cx=64
-        
+
         -- score (top)
         local s="score: "..flr(game_manager.player_score)
         print(s,cx-#s*2,30,7)
@@ -344,21 +340,19 @@ end
 
 
 
-function draw_wave_spr(s,x,y,w)
-    local wp,t=w*8,time()*50
-    for i=0,wp-1 do
-        local d=abs(i-t%(wp+40)+20)
-        sspr((s%16)*8+i,flr(s/16)*8,1,8,x+i,y-(d<20 and cos(d*0.025)*2 or 0))
-    end
-end
-
 function draw_startup()
     cls(1)
     draw_world()
 
-    -- title
-    draw_wave_spr(0,title_x1,10,8)
-    draw_wave_spr(16,title_x2,20,6)
+    -- title wave
+    local t=time()*50
+    for s=0,1 do
+        local sp,x,y,w=s==0 and 0 or 16,s==0 and title_x1 or title_x2,s==0 and 10 or 20,s==0 and 64 or 48
+        for i=0,w-1 do
+            local d=abs(i-t%(w+40)+20)
+            sspr((sp%16)*8+i,flr(sp/16)*8,1,8,x+i,y-(d<20 and cos(d*0.025)*2 or 0))
+        end
+    end
 
     -- ui
     if startup_phase=="menu_select" then
@@ -851,7 +845,7 @@ end
 -- SMOKE (world space)
 function particle_sys:spawn(x,y,z,col,count)
     count=count or 1
-    for i=1,count do
+    for _=1,count do
         local p=make_particle(
             x+(rnd()-.5)*.1,
             y+(rnd()-.5)*.1,
@@ -870,7 +864,7 @@ end
 -- EXPLOSIONS
 function particle_sys:explode(wx,wy,z,scale)
     local function add_group(radius,speed,size_px,life,count)
-        for i=1,count do
+        for _=1,count do
             -- Create particles in world space with world velocities
             local angle = rnd()
             local dist = rnd() * radius * scale * 0.1  -- convert pixel radius to world units
@@ -1074,7 +1068,7 @@ function circle_event.new()
     },circle_event)
 
     local n=game_manager.difficulty_rings_base+r*game_manager.difficulty_rings_step
-    for i=1,n do
+    for _=1,n do
         local a,d=rnd(1),8+rnd(4)
         add(self.circles,{x=player_ship.x+cos(a)*d,y=player_ship.y+sin(a)*d,radius=1.5,collected=false})
     end
@@ -1629,7 +1623,7 @@ function combat_event.new()
 
     local n=min(1+game_manager.difficulty_level,6)
     enemies={}
-    for i=1,n do
+    for _=1,n do
         local a,d=rnd(1),10+rnd(5)
         local ex,ey=player_ship.x+cos(a)*d,player_ship.y+sin(a)*d
         local e=ship.new(ex,ey,true) e.hp=50
@@ -1751,8 +1745,8 @@ function tile_manager:manage_cache()
                 local h=flr(mid(cont+hdetail+mountain-water_level,-4,28))
                 local i=1
                 while h>thresh[i] do i+=1 end
-                local pal=palcache[i]
-                cache[key]={pal[1],pal[2],pal[3],h}
+                local pc=palcache[i]
+                cache[key]={pc[1],pc[2],pc[3],h}
                 added+=1
             end
         end
