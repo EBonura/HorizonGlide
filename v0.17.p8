@@ -368,7 +368,7 @@ function init_menu_select()
     play_panel = panel.new(-50, 90, nil, nil, "play", 11)
     play_panel.selected = true
     play_panel:set_position(50, 90)
-    
+
     customize_panel = panel.new(128, 104, nil, nil, "customize", 12)
     customize_panel:set_position(40, 104)
 end
@@ -693,16 +693,12 @@ function draw_ui()
     -- Only draw sprite when expanded enough
     if h > 25 then
         spr(64,2,3,3,3)
-        
-        -- Mouth animation
-        if ui_msg!="" and ui_box_h>25 and (time()*8)%2<1 then
-            spr(99,10,19)
+        if ui_msg!="" then
+            -- Mouth animation
+            if (time()*8)%2<1 then spr(99,10,19) end
+            -- Text
+            print(sub(ui_msg,1,ui_vis),30,2,ui_col)
         end
-    end
-    
-    -- Text (only show if typing has started)
-    if ui_msg!="" and ui_box_h>25 then
-        print(sub(ui_msg,1,ui_vis),30,2,ui_col)
     end
     
     -- Right slot stays the same
@@ -713,11 +709,9 @@ function draw_ui()
 
     -- bottom HUD
     rectfill(0, 119, 127, 127, 0)
-
-    local health_col = player_ship.hp > 30 and 11 or 8
-    draw_segmented_bar(4, 120, player_ship.hp, 100, health_col, 5)
-    draw_segmented_bar(4, 123, player_ship.ammo, player_ship.max_ammo, 12, 5)
-    draw_segmented_bar(4, 126, player_ship.mines, player_ship.max_mines, 9, 5)
+    draw_segmented_bar(4,120,player_ship.hp,100,player_ship.hp>30 and 11 or 8,5)
+    draw_segmented_bar(4,123,player_ship.ammo,player_ship.max_ammo,12,5)
+    draw_segmented_bar(4,126,player_ship.mines,player_ship.max_mines,9,5)
 
     local score_text = "score: " .. flr(game_manager.display_score)
     print(score_text, 127 - #score_text * 4, 121, 10)
@@ -784,8 +778,7 @@ function panel:update()
     -- smooth move
     self.x+=(self.target_x-self.x)*0.2
     self.y+=(self.target_y-self.y)*0.2
-    if abs(self.x-self.target_x)<0.5 then self.x=self.target_x end
-    if abs(self.y-self.target_y)<0.5 then self.y=self.target_y end
+    if abs(self.x-self.target_x)<0.5 then self.x,self.y=self.target_x,self.target_y end
 
     -- expand/contract
     self.expand=self.selected and min(self.expand+1,3) or max(self.expand-1,0)
@@ -879,10 +872,9 @@ function particle_sys:explode(wx,wy,z,scale)
         end
     end
     -- core / medium / outer (fireballs)
-    add_group(4,0.5,3+rnd(2),15,flr(3*scale))
-    add_group(6,1.0,2+rnd(1),20,flr(5*scale))
-    add_group(8,1.5,1,      25,flr(4*scale))
-    -- removed debris line
+    for i=1,3 do
+        add_group(i*2+2,i*0.5,4-i+rnd(i==1 and 2 or 1),i*5+10,flr((4-i)*scale+(i==2 and scale or 0)))
+    end
 end
 
 function particle_sys:update()
@@ -939,7 +931,7 @@ gm.__index = gm
 function gm.new()
     local self=setmetatable({
         idle_duration=5,
-        event_types=split"combat,circles",
+        event_types=split"bombs",
 
         difficulty_rings_base=3,
         difficulty_rings_step=1,
@@ -982,21 +974,12 @@ function gm:update()
             new_msg = "cOLLECT aMMO"
         elseif not self.tut_mine then
             new_msg = "🅾️ tO dROP mINE"
-        elseif not self.tut_complete then
-            -- Show completion message once
-            new_msg = "hORIZON gLIDE bEGINS!"
-            self.tut_complete = true
-            self.tut_complete_time = time() + 2  -- show for 2 seconds
-        elseif time() > self.tut_complete_time then
-            -- Tutorial fully complete after message shown
-            self.tut = true
-            ui_msg,ui_vis,ui_until,ui_box_target_h="",0,0,6
-            self.idle_start_time = time() - 3  -- first event in 2 seconds instead of 5
+        elseif not self.tut then
+            self.tut=true
+            ui_say("hORIZON gLIDE bEGINS!",2,11)
+            self.idle_start_time=time()-3
             return
-        else
-            -- Waiting for completion message to finish
-            return
-        end
+        else return end
         
         -- Only update UI if message changed
         if new_msg != self.tut_msg then
@@ -1026,6 +1009,8 @@ function gm:start_random_event()
     self.next_event_index=self.next_event_index%#self.event_types+1
     if event_type=="circles" then
         self.current_event=circle_event.new()
+    elseif event_type=="bombs" then
+        self.current_event=bomb_event.new()
     else
         self.current_event=combat_event.new()
     end
@@ -1047,8 +1032,43 @@ end
 
 
 
+-- BOMB EVENT
+bomb_event={}
+bomb_event.__index=bomb_event
 
+function bomb_event.new()
+    ui_say("incoming bombs!",3,8)
+    return setmetatable({
+        bombs={},
+        next_bomb=time(),
+        end_time=time()+12,
+        completed=false,
+        success=false
+    },bomb_event)
+end
 
+function bomb_event:update()
+    if time()>self.end_time then
+        self.completed,self.success=true,true
+        game_manager.player_score+=800
+        return
+    end
+
+    if time()>self.next_bomb then
+        add(self.bombs,mine.new(
+            player_ship.x+player_ship.vx*12,
+            player_ship.y+player_ship.vy*12,
+            nil
+        ))
+        self.next_bomb=time()+max(0.4,0.8-0.05*game_manager.difficulty_level)+rnd(0.3)
+    end
+
+    prune_update(self.bombs)
+end
+
+function bomb_event:draw()
+    draw_all(self.bombs)
+end
 
 
 -- CIRCLE RACE EVENT
@@ -1147,7 +1167,7 @@ function circle_event:draw()
 
             -- highlight current target
             local cur=(i==self.current_target)
-            local base_radius=10+(cur and sin(t*2)*1.5 or 0)
+            local base_radius=10
             local col=cur and 8 or 2
 
             -- ring outline
@@ -1155,16 +1175,13 @@ function circle_event:draw()
                 pset(sx+cos(a)*base_radius, base_y+sin(a)*base_radius*0.5, col)
             end
 
-            -- rotating emitters on current target
+            -- expanding rings on current target
             if cur then
-                local rot=t*0.3
-                local tick=flr(t*30)
-                if tick%3==0 then
-                    for emitter=0,1 do
-                        local ang=rot+emitter*0.5
-                        local ex=sx+cos(ang)*base_radius*0.9
-                        local ey=base_y+sin(ang)*base_radius*0.45
-                        for h=0,10,3 do pset(ex,ey-h,col) end
+                for ring=0,2 do
+                    local z=(t*15+ring*8)%24
+                    local r=base_radius*(1+z/24)
+                    for a=0,1,0.02 do
+                        pset(sx+cos(a)*r,base_y-z+sin(a)*r*0.5,col)
                     end
                 end
             end
@@ -1231,15 +1248,21 @@ end
 -- MINE CLASS
 mine={}
 mine.__index=mine
-function mine.new(x,y,owner)return setmetatable({x=x,y=y,owner=owner},mine)end
+function mine.new(x,y,owner)return setmetatable({x=x,y=y,owner=owner,z=owner and 0 or 60},mine)end
 function mine:update()
-    local targets=self.owner==player_ship and enemies or{player_ship}
-    for t in all(targets)do
+    if self.z>0 then self.z-=4 return true end
+    if not self.owner then
+        particle_sys:explode(self.x,self.y,-terrain_h(self.x,self.y,true)*block_h,1.5)
+        sfx(62)
+        local dx,dy=player_ship.x-self.x,player_ship.y-self.y
+        if dx*dx+dy*dy<1 then player_ship.hp-=20 end
+        return false
+    end
+    for t in all(self.owner==player_ship and enemies or{player_ship})do
         local dx,dy=t.x-self.x,t.y-self.y
         if dx*dx+dy*dy<0.5 then
-            t.hp-=20
             particle_sys:explode(self.x,self.y,-terrain_h(self.x,self.y,true)*block_h,1.5)
-            sfx(62)
+            t.hp-=20 sfx(62)
             return false
         end
     end
@@ -1247,17 +1270,12 @@ function mine:update()
 end
 function mine:draw()
     local sx,sy=iso(self.x,self.y)
-    sy-=terrain_h(self.x,self.y,true)*block_h
     local col=self.owner==player_ship and 12 or 8
-    -- ground range indicator (dotted ellipse)
-    local ring_r=0.7*half_tile_width*2
-    for a=0,1,0.08 do
-        pset(sx+cos(a)*ring_r,sy+sin(a)*ring_r*0.5,col)
-    end
-    -- pulsing bomb
+    local gz=terrain_h(self.x,self.y,true)*block_h
+    for a=0,1,0.08 do pset(sx+cos(a)*17,sy-gz+sin(a)*8.5,col)end
+    sy+=self.z>0 and -self.z or -gz
     local r=4+sin(time()*6+self.x+self.y)*1.5
-    circfill(sx,sy,r,7)
-    circfill(sx,sy,r/2,col)
+    circfill(sx,sy,r,7)circfill(sx,sy,r/2,col)
 end
 
 -- SHIP CLASS
@@ -1332,16 +1350,17 @@ function ship:ai_update()
     local m=dist_trig(dx,dy)
     if m>0.1 then self.vx+=dx*self.accel/m self.vy+=dy*self.accel/m end
 
+    local t=time()
     -- fire (instant for relentless combat)
-    if mode and self:update_targeting() and (not self.last_shot_time or time()-self.last_shot_time>self.fire_rate) then
+    if mode and self:update_targeting() and (not self.last_shot_time or t-self.last_shot_time>self.fire_rate) then
         self:fire_at()
-        self.last_shot_time=time()
+        self.last_shot_time=t
     end
 
-    -- drop mine when fleeing and close to player
-    if not mode and dist<8 and self.mines>0 and rnd()<0.15 then
+    -- drop mine when fleeing
+    if not mode and dist<8 and (not self.last_mine_time or t-self.last_mine_time>1) then
         add(mines,mine.new(self.x,self.y,self))
-        self.mines-=1
+        self.last_mine_time=t
     end
 end
 
@@ -1600,8 +1619,7 @@ function ui_tick()
 
     -- timeout ヌ●★ clear & collapse
     if ui_until>0 and time()>ui_until then
-        ui_msg="" ui_vis=0 ui_until=0
-        ui_box_target_h=6
+        ui_msg,ui_vis,ui_until,ui_box_target_h="",0,0,6
     end
 end
 
