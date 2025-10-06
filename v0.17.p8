@@ -38,6 +38,7 @@ end
 function draw_all(t)   for o in all(t) do o:draw()   end end
 function update_all(t) for o in all(t) do o:update() end end
 function prune_update(t) for i=#t,1,-1 do if not t[i]:update() then deli(t,i) end end end
+function draw_iso_ellipse(sx,sy,rx,ry,col,step)for a=0,1,step do pset(sx+cos(a)*rx,sy+sin(a)*ry,col)end end
 
 function draw_circle_arrow(tx,ty,col)
     local px,py=player_ship.x,player_ship.y
@@ -675,8 +676,8 @@ function draw_ui()
     
     -- Box
     local h = flr(ui_box_h)
-    rectfill(0,1,27,h,0) 
-    rect(0,1,27,h,5)
+    rrectfill(0,1,27,h-1,2,0)
+    rrect(0,1,27,h-1,2,5)
     
     -- Always draw green lines
     if h > 3 then
@@ -756,7 +757,7 @@ function panel.new(x,y,w,h,text,col)
     return setmetatable({
         x=x,y=y,
         w=w or (#text*4+12),
-        h=h or 10,
+        h=h or 9,
         text=text,
         col=col or 5,
         selected=false,
@@ -792,15 +793,9 @@ function panel:draw()
     -- position + size (include expand)
     local dx,dy,dw,dh=self.x-self.expand,self.y,self.w+self.expand*2,self.h
 
-    -- pulse when selected
-    if self.selected then
-        local p=sin(time()*6)
-        dx-=p*0.5 dy-=p*0.5 dw+=p dh+=p
-    end
-
     -- bg + border
-    rectfill(dx,dy,dx+dw,dy+dh,0)
-    rect(dx-1,dy-1,dx+dw,dy+dh,self.col)
+    rrectfill(dx-1,dy-1,dw+2,dh+2,2,self.col)
+    rrectfill(dx,dy,dw,dh,2,0)
 
     -- centered text
     local tx,ty,tcol=dx+(dw-#self.text*4)/2,dy+(dh-5)/2,self.selected and self.col or 7
@@ -931,11 +926,11 @@ gm.__index = gm
 function gm.new()
     local self=setmetatable({
         idle_duration=5,
-        event_types=split"bombs",
+        event_types=split"combat,circles,bombs",
 
         difficulty_rings_base=3,
         difficulty_rings_step=1,
-        difficulty_base_time=6,
+        difficulty_base_time=10,
         difficulty_recharge_start=2,
         difficulty_recharge_step=0.1,
         difficulty_recharge_min=1,
@@ -1051,6 +1046,8 @@ function bomb_event:update()
     if time()>self.end_time then
         self.completed,self.success=true,true
         game_manager.player_score+=800
+        player_ship.mines=player_ship.max_mines
+        pop("full mines!",-10,9)
         return
     end
 
@@ -1168,21 +1165,17 @@ function circle_event:draw()
             -- highlight current target
             local cur=(i==self.current_target)
             local base_radius=10
-            local col=cur and 8 or 2
+            local col=cur and 10 or 9
 
             -- ring outline
-            for a=0,1,0.01 do
-                pset(sx+cos(a)*base_radius, base_y+sin(a)*base_radius*0.5, col)
-            end
+            draw_iso_ellipse(sx,base_y,base_radius,base_radius*0.5,col,0.01)
 
             -- expanding rings on current target
             if cur then
                 for ring=0,2 do
                     local z=(t*15+ring*8)%24
                     local r=base_radius*(1+z/24)
-                    for a=0,1,0.02 do
-                        pset(sx+cos(a)*r,base_y-z+sin(a)*r*0.5,col)
-                    end
+                    draw_iso_ellipse(sx,base_y-z,r,r*0.5,col,0.02)
                 end
             end
         end
@@ -1191,7 +1184,7 @@ function circle_event:draw()
     -- direction arrow to current target
     local target=self.circles[self.current_target]
     if target and not target.collected then
-        draw_circle_arrow(target.x,target.y,8)
+        draw_circle_arrow(target.x,target.y,11)
     end
 end
 
@@ -1255,14 +1248,14 @@ function mine:update()
         particle_sys:explode(self.x,self.y,-terrain_h(self.x,self.y,true)*block_h,1.5)
         sfx(62)
         local dx,dy=player_ship.x-self.x,player_ship.y-self.y
-        if dx*dx+dy*dy<1 then player_ship.hp-=20 end
+        if dx*dx+dy*dy<1 then player_ship.hp-=15 end
         return false
     end
     for t in all(self.owner==player_ship and enemies or{player_ship})do
         local dx,dy=t.x-self.x,t.y-self.y
         if dx*dx+dy*dy<0.5 then
             particle_sys:explode(self.x,self.y,-terrain_h(self.x,self.y,true)*block_h,1.5)
-            t.hp-=20 sfx(62)
+            t.hp-=15 sfx(62)
             return false
         end
     end
@@ -1272,7 +1265,7 @@ function mine:draw()
     local sx,sy=iso(self.x,self.y)
     local col=self.owner==player_ship and 12 or 8
     local gz=terrain_h(self.x,self.y,true)*block_h
-    for a=0,1,0.08 do pset(sx+cos(a)*17,sy-gz+sin(a)*8.5,col)end
+    draw_iso_ellipse(sx,sy-gz,17,8.5,col,0.08)
     sy+=self.z>0 and -self.z or -gz
     local r=4+sin(time()*6+self.x+self.y)*1.5
     circfill(sx,sy,r,7)circfill(sx,sy,r/2,col)
