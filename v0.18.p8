@@ -676,39 +676,36 @@ function draw_ui()
 
     -- Box
     local h = flr(ui_box_h)
-    rrectfill(98,1,26,h-1,2,0)
+    rrectfill(100,1,27,h-1,2,0)
 
     -- Always draw green lines
     if h > 3 then
         -- Horizontal lines
         for y=3,h-2,4 do
-            line(99,y,122,y,3)
+            line(101,y,125,y,3)
         end
         -- Vertical lines
-        for x=102,120,6 do
+        for x=104,124,6 do
             line(x,2,x,h-1,3)
         end
     end
 
     -- Only draw sprite when expanded enough
     if h > 25 then
-        spr(64,100,3,3,3)
+        spr(64,102,3,3,3)
         if ui_msg!="" then
             -- Mouth animation
-            if (time()*8)%2<1 then spr(99,108,19) end
+            if (time()*8)%2<1 then spr(99,110,19) end
             -- Text
             print(sub(ui_msg,1,ui_vis),4,3,ui_col)
+        elseif ui_rmsg!="" then
+            -- Show timer when no message
+            print(ui_rmsg,4,3,10)
         end
     end
 
     -- Draw border last
-    rrect(98,1,26,h-1,2,12)
-
-    -- Right slot stays the same
-    if ui_rmsg!="" then
-        local w=#ui_rmsg*4
-        print(ui_rmsg, 127-w-2, 2, 5)
-    end
+    rrect(100,1,27,h-1,2,12)
 
     -- bottom HUD
     sspr(0,16,128,16,0,112)
@@ -928,7 +925,7 @@ gm.__index = gm
 function gm.new()
     local self=setmetatable({
         idle_duration=5,
-        event_types=split"combat,circles,bombs",
+        event_types=split"circles,combat,bombs",
 
         difficulty_rings_base=3,
         difficulty_rings_step=1,
@@ -1090,7 +1087,7 @@ function circle_event.new()
     end
 
     self.end_time=time()+self.base_time
-    ui_say("cOLLECT "..#self.circles.." cIRCLES!",3,8)
+    ui_say("cOLLECT "..#self.circles.." cIRCLES!",1.5,8)
     ui_rmsg=flr(self.base_time).."s"
     return self
 end
@@ -1107,7 +1104,7 @@ function circle_event:update()
     -- timeout -> fail
     if time_left<=0 then
         self.completed,self.success=true,false
-        ui_say("event failed",3,8)
+        ui_say("event failed",1.5,8)
         ui_rmsg=""
         return
     end
@@ -1141,12 +1138,12 @@ function circle_event:update()
                 game_manager.player_score+=award
                 pop("+"..award,-10,7)
                 pop("full hp!",-20,11)
-                ui_say("event complete!",3,11)
+                ui_say("event complete!",1.5,11)
                 ui_rmsg=""
             else
                 -- progress message (right slot keeps updating separately)
                 local remaining=#self.circles-self.current_target+1
-                ui_say(remaining.." circle"..(remaining>1 and "s" or "").." left",2,10)
+                ui_say(remaining.." circle"..(remaining>1 and "s" or "").." left",1,10)
             end
         end
     end
@@ -1600,9 +1597,10 @@ end
 
 
 function ui_tick()
-    -- tween box height
-    ui_box_h+=(ui_box_target_h-ui_box_h)*0.2
-    if abs(ui_box_h-ui_box_target_h)<0.5 then ui_box_h=ui_box_target_h end
+    -- tween box height (keep expanded if timer active)
+    local target=ui_rmsg!="" and 26 or ui_box_target_h
+    ui_box_h+=(target-ui_box_h)*0.2
+    if abs(ui_box_h-target)<0.5 then ui_box_h=target end
 
     -- nothing to type yet or box not expanded
     if ui_msg=="" or ui_box_h<=25 then return end
@@ -1612,9 +1610,10 @@ function ui_tick()
         ui_vis = min(ui_vis + ((#ui_msg > 15) and 3 or 1), #ui_msg)
     end
 
-    -- timeout ヌ●★ clear & collapse
+    -- timeout ヌ●★ clear & collapse (but keep expanded if timer active)
     if ui_until>0 and time()>ui_until then
-        ui_msg,ui_vis,ui_until,ui_box_target_h="",0,0,6
+        ui_msg,ui_vis,ui_until="",0,0
+        ui_box_target_h=ui_rmsg!="" and 26 or 6
     end
 end
 
@@ -1816,12 +1815,12 @@ __gfx__
 eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
 eeeccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccceeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
 eec11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111ceeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
-ec0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000ceeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
-ec0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000ceeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
-ec0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000ceeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
-ec0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000ceeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
-ec0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000ceeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
-eec00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000ceeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
+ec0000000000001110000000000000111000000000000011100000000000001110000000000000111000000000000ceeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
+ec0000000000011100000000000001110000000000000111000000000000011100000000000001110000000000000ceeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
+ec0000000000111000000000000011100000000000001110000000000000111000000000000011100000000000001ceeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
+ec0000000001110000000000000111000000000000011100000000000001110000000000000111000000000000011ceeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
+ec0000000011100000000000001110000000000000111000000000000011100000000000001110000000000000111ceeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
+eec00000011100000000000001110000000000000111000000000000011100000000000001110000000000000111ceeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
 eeeccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccceeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
 eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
 eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
@@ -1834,15 +1833,15 @@ eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
 eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
 eeeeccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccceeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
 eeec1111111111111111111111111111111111111111111111111111111111111ceeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
-eec100000000000000000000000000000000000000000000000000000000000001ceeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
-ec10000000000000000000000000000000000000000000000000000000000000001ceeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeecccccccccccccccccccccccceee
-ec100000000000000000000000000000000000000000000000000000000000000001ceeeeeeeeeeeeeeeeeeeeeeeeeeeeeeec111111111111111111111111cee
-ec1000000000000000000000000000000000000000000000000000000000000000001ceeeeeeeeeeeeeeeeeeeeeeeeeeeeec10000000000000000000000000ce
-ec10000000000000000000000000000000000000000000000000000000000000000001ceeeeeeeeeeeeeeeeeeeeeeeeeeec100000000000000000000000000ce
-ec100000000000000000000000000000000000000000000000000000000000000000001ceeeeeeeeeeeeeeeeeeeeeeeeec1000000000000000000000000000ce
-ec1000000000000000000000000000000000000000000000000000000000000000000001ceeeeeeeeeeeeeeeeeeeeeeec10000000000000000000000000000ce
-eec1000000000000000000000000000000000000000000000000000000000000000000001ccccccccccccccccccccccc100000000000000000000000000000ce
-eeec1000000000000000000000000000000000000000000000000000000000000000000001111111111111111111111100000000000000000000000000000cee
+eec100000000000001110000000000000111000000000000011100000000000001ceeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
+ec10000000000000111000000000000011100000000000001110000000000000111ceeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeecccccccccccccccccccccccceee
+ec100000000000011100000000000001110000000000000111000000000000011101ceeeeeeeeeeeeeeeeeeeeeeeeeeeeeeec111111111111111111111111cee
+ec1000000000001110000000000000111000000000000011100000000000001110001ceeeeeeeeeeeeeeeeeeeeeeeeeeeeec10000000001110000000100000ce
+ec10000000000111000000000000011100000000000001110000000000000111000001ceeeeeeeeeeeeeeeeeeeeeeeeeeec100000000011100000000000001ce
+ec100000000011100000000000001110000000000000111000000000000011100000001ceeeeeeeeeeeeeeeeeeeeeeeeec1000000000111000000000000011ce
+ec1000000001110000000000000111000000000000011100000000000001110000000001ceeeeeeeeeeeeeeeeeeeeeeec10000000001110000000000000111ce
+eec1000000111000000000000011100000000000001110000000000000111000000000001ccccccccccccccccccccccc100000000011100000000000001111ce
+eeec1000011100000000000001110000000000000111000000000000011100000000000001110000000000000111000000000000011100000000000001111cee
 eeeeccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccceee
 eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
 e00eeee000000000eeeeeeeeeeeeeeeeeeeeeeee000eeeee000000000000000000000000000000000000000000000000eeee000e000000000000000000000000
