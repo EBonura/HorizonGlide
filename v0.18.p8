@@ -912,7 +912,7 @@ gm.__index = gm
 function gm.new()
     local self=setmetatable({
         idle_duration=5,
-        event_types=split"combat,circles,bombs",
+        event_types={combat_event,circle_event,bomb_event},
         difficulty_rings_base=3,
         difficulty_rings_step=1,
         difficulty_base_time=10,
@@ -989,15 +989,8 @@ function gm:update()
 end
 
 function gm:start_random_event()
-    local event_type=self.event_types[self.next_event_index]
+    self.current_event=self.event_types[self.next_event_index].new()
     self.next_event_index=self.next_event_index%3+1
-    if event_type=="circles" then
-        self.current_event=circle_event.new()
-    elseif event_type=="bombs" then
-        self.current_event=bomb_event.new()
-    else
-        self.current_event=combat_event.new()
-    end
     self.state="active"
 end
 
@@ -1617,7 +1610,7 @@ combat_event = {}
 combat_event.__index = combat_event
 
 function combat_event.new()
-    local self=setmetatable({completed=false,success=false,start_count=0,is_combat=true,last_msg=nil},combat_event)
+    local self=setmetatable({completed=false,success=false,start_count=0,last_msg=nil},combat_event)
     ui_say("enemy wave incoming!",3,8)
 
     local n=min(1+game_manager.difficulty_level,6)
