@@ -1120,7 +1120,7 @@ function circle_event:update()
         local dx,dy=player_ship.x-circle.x,player_ship.y-circle.y
         if dist_trig(dx,dy)<circle.radius then
             circle.collected=true
-            sfx(61)
+            sfx(59)
             player_ship.hp=min(player_ship.hp+10,player_ship.max_hp)
 
             -- bonus time (not on last)
@@ -1206,7 +1206,7 @@ function collectible:update()
 
     if dist2<1 then
         self.collected=true
-        sfx(59)
+        sfx(61)
         player_ship.ammo=min(player_ship.ammo+10,player_ship.max_ammo)
         pop("+10ammo",-10,12)
         game_manager.player_score+=25
@@ -1252,13 +1252,11 @@ function mine:update()
     if not self.owner then
         particle_sys:explode(self.x,self.y,-terrain_h(self.x,self.y,true)*block_h,1.5)
         sfx(62)
-        local dx,dy=player_ship.x-self.x,player_ship.y-self.y
-        if dx*dx+dy*dy<1 then player_ship.hp-=15 end
+        if dist_trig(player_ship.x-self.x,player_ship.y-self.y)<2 then player_ship.hp-=15 end
         return false
     end
     for t in all(self.owner==player_ship and enemies or{player_ship})do
-        local dx,dy=t.x-self.x,t.y-self.y
-        if dx*dx+dy*dy<0.5 then
+        if dist_trig(t.x-self.x,t.y-self.y)<2 then
             particle_sys:explode(self.x,self.y,-terrain_h(self.x,self.y,true)*block_h,1.5)
             t.hp-=15 sfx(62)
             return false
@@ -1270,7 +1268,7 @@ function mine:draw()
     local sx,sy=iso(self.x,self.y)
     local col=self.owner==player_ship and 12 or 8
     local gz=terrain_h(self.x,self.y,true)*block_h
-    draw_iso_ellipse(sx,sy-gz,20,10,col,0.04)
+    draw_iso_ellipse(sx,sy-gz,24,12,col,0.04)
     sy+=self.z>0 and -self.z or -gz
     local r=4+sin(time()*6+self.x+self.y)*1.5
     circfill(sx,sy,r,7)circfill(sx,sy,r/2,col)
