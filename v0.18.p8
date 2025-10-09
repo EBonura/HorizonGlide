@@ -94,7 +94,7 @@ function _init()
     view_range,half_tile_width,half_tile_height,block_h=0,12,6,2
 
     -- containers & cursors
-    enemies,collectibles,projectiles,floating_texts,ws,customization_panels,mines={},{},{},{},{},{},{}
+    collectibles,floating_texts,ws,customization_panels={},{},{},{}
     customize_cursor=1
 
     -- player
@@ -382,6 +382,7 @@ function update_customize()
     -- navigation
     local d=(btnp(⬆️) and -1) or (btnp(⬇️) and 1) or 0
     if d!=0 then
+        sfx(57)
         customization_panels[customize_cursor].selected=false
         customize_cursor=(customize_cursor+d-1)%#customization_panels+1
         customization_panels[customize_cursor].selected=true
@@ -389,7 +390,7 @@ function update_customize()
 
     local p=customization_panels[customize_cursor]
     if p.is_start then
-        if btnp(❎) then view_range=7 init_game() end
+        if btnp(❎) then sfx(57) view_range=7 init_game() end
         return
     end
 
@@ -400,6 +401,7 @@ function update_customize()
     -- randomize all
     if o.is_action then
         if btnp(❎) then
+            sfx(57)
             menu_options[1].current=flr(rnd(#menu_options[1].values))+1
             menu_options[2].current=flr(rnd(#menu_options[2].values))+1
             current_seed=flr(rnd(9999))
@@ -417,6 +419,7 @@ function update_customize()
     -- left/right adjustments
     local lr=(btnp(⬅️) and -1) or (btnp(➡️) and 1) or 0
     if lr==0 then return end
+    sfx(57)
 
     if o.is_seed then
         current_seed=(current_seed+lr)%10000
@@ -450,11 +453,13 @@ function update_menu_select()
 
     -- toggle selection with up/down
     if btnp(⬆️) or btnp(⬇️) then
+        sfx(57)
         play_panel.selected,customize_panel.selected=not play_panel.selected,not customize_panel.selected
     end
 
     -- confirm
     if btnp(❎) then
+        sfx(57)
         if play_panel.selected then
             view_range=7
             init_game()
@@ -502,39 +507,16 @@ end
 -- GAME FUNCTIONS
 function init_game()
     music(0)
-    -- Reset palette
-    pal()
-    palt(0,false)
-    palt(14,true)
-
-    -- restore normal cache mode
-    tile_manager.minimap_mode=false
-
-    game_state="game"
-    
-    -- Reset UI
-    floating_texts={}
-
-    -- reset particle system
-    particle_sys.list={}
-    
-    -- game manager
+    pal() palt(0,false) palt(14,true)
+    tile_manager.minimap_mode,game_state=false,"game"
+    floating_texts,particle_sys.list,mines,projectiles,enemies,collectibles={},{},{},{},{},{}
     game_manager=gm.new()
-    
-    -- Reset player ship state
+    game_manager.tut=true
     player_ship.dead,player_ship.hp,player_ship.last_shot_time=false,player_ship.max_hp,time()+0.5
-    
-    -- Update tiles for full view range
     tile_manager:update_player_position(player_ship.x, player_ship.y)
-    
-    -- Ensure altitude is correct
     player_ship:set_altitude()
-
-    -- wipe top texts
     ui_msg,ui_vis,ui_until,ui_rmsg="",0,0,""
-
-    collectibles={}
-    for _=1,8 do  -- spawn 8 items
+    for _=1,8 do
         local a,d=rnd(),15+rnd(20)
         add(collectibles,collectible.new(cos(a)*d,sin(a)*d))
     end
@@ -927,7 +909,7 @@ gm.__index = gm
 function gm.new()
     local self=setmetatable({
         idle_duration=5,
-        event_types=split"bombs,circles,combat",
+        event_types=split"combat,circles,bombs",
 
         difficulty_rings_base=3,
         difficulty_rings_step=1,
@@ -995,6 +977,9 @@ function gm:update()
         local e=self.current_event
         if e then
             e:update()
+            if player_ship.hp<=0 then
+                e.completed,e.success,player_ship.dead,ui_rmsg=true,false,true,""
+            end
             if e.completed then self:end_event(e.success) end
         end
     end
@@ -1661,12 +1646,6 @@ function combat_event:update()
         local msg=(remaining==1) and "1 enemy left" or (remaining.." enemies left")
         if self.last_msg!=msg then ui_say(msg,3,8) self.last_msg=msg end
     end
-
-    if player_ship.hp<=0 then
-        self.completed,self.success=true,false
-        player_ship.dead=true
-        ui_rmsg=""
-    end
 end
 
 
@@ -2060,7 +2039,7 @@ c70b00001c3441f3041d3041c3441d3041d3041c3441f3041d3041c3341d3041d3041c3341f3041c
 001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+a10200001016610166101660010600106001060010600106001060010600106001060010600106001060010600106001060010600106001060010600106001060010600106001060010600106001060010600106
 0001000031660256601d6601766010660096600266000660076000060000600026000460004600046000360003600056000860009600006000060000600006000060000600006000060000600006000060000600
 1002000003250082500f250172501c25021250262502a250242002c20031200002000020000200002000020000200002000020000200002000020000200002000020000200002000020000200002000020000200
 a502000005757107571b757287573a7573f7573c757387573175721757127571175715757197571c7571f75723757247571f75719757117570c75706757027570075700707007070070700707007070070700707
