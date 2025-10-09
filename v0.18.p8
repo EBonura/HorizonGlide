@@ -698,14 +698,16 @@ function draw_ui()
             if (time()*8)%2<1 then spr(99,110,19) end
             -- Text
             print(sub(ui_msg,1,ui_vis),4,3,ui_col)
-        elseif ui_rmsg!="" then
-            -- Show timer when no message
-            print(ui_rmsg,4,3,10)
         end
     end
 
     -- Draw border last
     rrect(100,1,27,h-1,2,12)
+
+    -- Timer outside box (no expansion needed)
+    if ui_rmsg!="" and ui_msg=="" then
+        print(ui_rmsg,4,3,10)
+    end
 
     -- bottom HUD
     sspr(0,16,128,16,0,112)
@@ -744,7 +746,7 @@ end
 
 function floating_text:draw()
     local w,x1=#self.text*4,self.x-#self.text*2
-    rectfill(x1-1,self.y-1,x1+w,self.y+5,0)
+    rrectfill(x1-1,self.y-1,w+2,7,1,0)
     print(self.text,x1,self.y,self.col)
 end
 
@@ -1183,7 +1185,7 @@ function circle_event:draw()
     -- direction arrow to current target
     local target=self.circles[self.current_target]
     if target and not target.collected then
-        draw_circle_arrow(target.x,target.y,11)
+        draw_circle_arrow(target.x,target.y,9)
     end
 end
 
@@ -1597,10 +1599,9 @@ end
 
 
 function ui_tick()
-    -- tween box height (keep expanded if timer active)
-    local target=ui_rmsg!="" and 26 or ui_box_target_h
-    ui_box_h+=(target-ui_box_h)*0.2
-    if abs(ui_box_h-target)<0.5 then ui_box_h=target end
+    -- tween box height (only expand for actual messages, not timer)
+    ui_box_h+=(ui_box_target_h-ui_box_h)*0.2
+    if abs(ui_box_h-ui_box_target_h)<0.5 then ui_box_h=ui_box_target_h end
 
     -- nothing to type yet or box not expanded
     if ui_msg=="" or ui_box_h<=25 then return end
@@ -1610,10 +1611,9 @@ function ui_tick()
         ui_vis = min(ui_vis + ((#ui_msg > 15) and 3 or 1), #ui_msg)
     end
 
-    -- timeout ヌ●★ clear & collapse (but keep expanded if timer active)
+    -- timeout ヌ●★ clear & collapse
     if ui_until>0 and time()>ui_until then
-        ui_msg,ui_vis,ui_until="",0,0
-        ui_box_target_h=ui_rmsg!="" and 26 or 6
+        ui_msg,ui_vis,ui_until,ui_box_target_h="",0,0,6
     end
 end
 
