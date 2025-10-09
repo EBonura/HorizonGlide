@@ -676,31 +676,33 @@ function draw_ui()
 
     -- Box
     local h = flr(ui_box_h)
-    rrectfill(0,1,27,h-1,2,0)
-    rrect(0,1,27,h-1,2,5)
+    rrectfill(98,1,26,h-1,2,0)
 
     -- Always draw green lines
     if h > 3 then
         -- Horizontal lines
         for y=3,h-2,4 do
-            line(1,y,26,y,3)
+            line(99,y,122,y,3)
         end
         -- Vertical lines
-        for x=4,24,6 do
+        for x=102,120,6 do
             line(x,2,x,h-1,3)
         end
     end
 
     -- Only draw sprite when expanded enough
     if h > 25 then
-        spr(64,2,3,3,3)
+        spr(64,100,3,3,3)
         if ui_msg!="" then
             -- Mouth animation
-            if (time()*8)%2<1 then spr(99,10,19) end
+            if (time()*8)%2<1 then spr(99,108,19) end
             -- Text
-            print(sub(ui_msg,1,ui_vis),30,2,ui_col)
+            print(sub(ui_msg,1,ui_vis),4,3,ui_col)
         end
     end
+
+    -- Draw border last
+    rrect(98,1,26,h-1,2,12)
 
     -- Right slot stays the same
     if ui_rmsg!="" then
@@ -710,12 +712,12 @@ function draw_ui()
 
     -- bottom HUD
     sspr(0,16,128,16,0,112)
-    draw_segmented_bar(4,117,player_ship.hp,100,player_ship.hp>30 and 11 or 8,5)
-    draw_segmented_bar(4,120,player_ship.ammo,player_ship.max_ammo,12,5)
-    draw_segmented_bar(4,123,player_ship.mines,player_ship.max_mines,9,5)
+    draw_segmented_bar(5,117,player_ship.hp,100,player_ship.hp>30 and 11 or 8,5)
+    draw_segmented_bar(5,120,player_ship.ammo,player_ship.max_ammo,12,5)
+    draw_segmented_bar(5,123,player_ship.mines,player_ship.max_mines,9,5)
 
     local score_text = sub("00000"..flr(game_manager.display_score),-6)
-    print(score_text, 127 - #score_text * 4, 120, 10)
+    print(score_text, 125 - #score_text * 4, 120, 10)
 end
 
 
@@ -1811,15 +1813,16 @@ end
 
 
 __gfx__
-eeeeeeeeeeeeeeeeeeeeeeeeeeecccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccee
-eeeeeeeeeeeeeeeeeeeeeeeeeee111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111ce
-eeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000c
-eeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000c
-eeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000c
-eeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000c
-eeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000c
-eeeeeeeeeeeeeeeeeeeeeeeeeee000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000ce
-eeeeeeeeeeeeeeeeeeeeeeeeeeecccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccee
+eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
+eeeccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccceeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
+eec11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111ceeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
+ec0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000ceeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
+ec0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000ceeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
+ec0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000ceeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
+ec0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000ceeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
+ec0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000ceeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
+eec00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000ceeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
+eeeccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccceeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
 eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
 eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
 eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
@@ -1829,19 +1832,18 @@ eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
 eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
 eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
 eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
-eeeccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccceeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
-eec1111111111111111111111111111111111111111111111111111111111111ceeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
-ec100000000000000000000000000000000000000000000000000000000000001ceeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
-c10000000000000000000000000000000000000000000000000000000000000001ceeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeecccccccccccccccccccccccccee
-c100000000000000000000000000000000000000000000000000000000000000001ceeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeec1111111111111111111111111ce
-c1000000000000000000000000000000000000000000000000000000000000000001ceeeeeeeeeeeeeeeeeeeeeeeeeeeeeec100000000000000000000000000c
-c10000000000000000000000000000000000000000000000000000000000000000001ceeeeeeeeeeeeeeeeeeeeeeeeeeeec1000000000000000000000000000c
-c100000000000000000000000000000000000000000000000000000000000000000001ceeeeeeeeeeeeeeeeeeeeeeeeeec10000000000000000000000000000c
-c1000000000000000000000000000000000000000000000000000000000000000000001ceeeeeeeeeeeeeeeeeeeeeeeec100000000000000000000000000000c
-ec1000000000000000000000000000000000000000000000000000000000000000000001cccccccccccccccccccccccc1000000000000000000000000000000c
-eec100000000000000000000000000000000000000000000000000000000000000000000111111111111111111111111000000000000000000000000000000ce
-eeecccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccee
+eeeeccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccceeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
+eeec1111111111111111111111111111111111111111111111111111111111111ceeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
+eec100000000000000000000000000000000000000000000000000000000000001ceeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
+ec10000000000000000000000000000000000000000000000000000000000000001ceeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeecccccccccccccccccccccccceee
+ec100000000000000000000000000000000000000000000000000000000000000001ceeeeeeeeeeeeeeeeeeeeeeeeeeeeeeec111111111111111111111111cee
+ec1000000000000000000000000000000000000000000000000000000000000000001ceeeeeeeeeeeeeeeeeeeeeeeeeeeeec10000000000000000000000000ce
+ec10000000000000000000000000000000000000000000000000000000000000000001ceeeeeeeeeeeeeeeeeeeeeeeeeeec100000000000000000000000000ce
+ec100000000000000000000000000000000000000000000000000000000000000000001ceeeeeeeeeeeeeeeeeeeeeeeeec1000000000000000000000000000ce
+ec1000000000000000000000000000000000000000000000000000000000000000000001ceeeeeeeeeeeeeeeeeeeeeeec10000000000000000000000000000ce
+eec1000000000000000000000000000000000000000000000000000000000000000000001ccccccccccccccccccccccc100000000000000000000000000000ce
+eeec1000000000000000000000000000000000000000000000000000000000000000000001111111111111111111111100000000000000000000000000000cee
+eeeeccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccceee
 eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
 e00eeee000000000eeeeeeeeeeeeeeeeeeeeeeee000eeeee000000000000000000000000000000000000000000000000eeee000e000000000000000000000000
 e00eee00555555d500eeeeeeeeeeeeeeeeeeeeee0c0eeeee0c0ccccccccc0ccccccccc0c0ccccccccc0ccccccccc0cc00eee0c0e000000000000000000000000
