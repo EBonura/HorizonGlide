@@ -101,6 +101,9 @@ function _init()
     player_ship=ship.new(0,0)
     player_ship.is_hovering=true
 
+    -- game manager
+    game_manager=gm.new()
+
     -- menu options (MUST be set before any terrain() call)
     menu_options={
         {name="sCALE",  values=split"8,10,12,14,16", current=2},
@@ -510,8 +513,7 @@ function init_game()
     pal() palt(0,false) palt(14,true)
     tile_manager.minimap_mode,game_state=false,"game"
     floating_texts,particle_sys.list,mines,projectiles,enemies,collectibles={},{},{},{},{},{}
-    game_manager=gm.new()
-    game_manager.tut=true
+    game_manager:reset()
     player_ship.dead,player_ship.hp,player_ship.last_shot_time=false,player_ship.max_hp,time()+0.5
     tile_manager:update_player_position(player_ship.x, player_ship.y)
     player_ship:set_altitude()
@@ -906,25 +908,26 @@ end
 gm = {}
 gm.__index = gm
 
+
 function gm.new()
     local self=setmetatable({
         idle_duration=5,
         event_types=split"combat,circles,bombs",
-
         difficulty_rings_base=3,
         difficulty_rings_step=1,
         difficulty_base_time=10,
         difficulty_recharge_start=2,
         difficulty_recharge_step=0.1,
         difficulty_recharge_min=1,
-        difficulty_level=0
+        difficulty_level=0,
+        tut=nil
     },gm)
     self:reset()
     return self
 end
 
 function gm:reset()
-    self.state,self.current_event,self.idle_start_time="idle",nil,nil
+    self.state,self.current_event,self.idle_start_time="idle",nil,self.tut and time()-3 or nil
     self.next_event_index,self.player_score,self.display_score,self.difficulty_level=1,0,0,0
 end
 
@@ -945,7 +948,7 @@ function gm:update()
         -- Check what hasn't been done yet (priority: move > shoot > collect > mine)
         local new_msg = nil
         if not self.tut_moved then
-            new_msg = "arrow keys to move"
+            new_msg = "aRROW KEYS TO MOVE"
         elseif not self.tut_shot then
             new_msg = "❎ tO sHOOT"
         elseif not self.tut_collected then
@@ -987,7 +990,7 @@ end
 
 function gm:start_random_event()
     local event_type=self.event_types[self.next_event_index]
-    self.next_event_index=self.next_event_index%#self.event_types+1
+    self.next_event_index=self.next_event_index%3+1
     if event_type=="circles" then
         self.current_event=circle_event.new()
     elseif event_type=="bombs" then
