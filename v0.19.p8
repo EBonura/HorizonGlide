@@ -7,6 +7,7 @@ __lua__
 -- Helper functions
 function dist_trig(dx, dy) local ang = atan2(dx, dy) return dx * cos(ang) + dy * sin(ang) end
 function iso(x,y) return cam_offset_x+(x-y)*half_tile_width, cam_offset_y+(x+y)*half_tile_height end
+function vdist(s,ox,oy) local dh=(s.current_altitude-terrain_h(ox,oy))/6 return dist_trig(s.x-ox-dh,s.y-oy-dh) end
 
 
 function fmt2(n)
@@ -761,7 +762,6 @@ function panel:update()
     -- smooth move
     self.x+=(self.target_x-self.x)*0.1
     self.y+=(self.target_y-self.y)*0.1
-    if abs(self.x-self.target_x)<0.5 then self.x,self.y=self.target_x,self.target_y end
 
     -- expand/contract
     self.expand=self.selected and min(self.expand+0.5,3) or max(self.expand-0.5,0)
@@ -1095,8 +1095,7 @@ function circle_event:update()
     -- rings
     local circle=self.circles[self.current_target]
     if circle and not circle.collected then
-        local dx,dy=player_ship.x-circle.x,player_ship.y-circle.y
-        if dist_trig(dx,dy)<circle.radius then
+        if vdist(player_ship,circle.x,circle.y)<circle.radius then
             circle.collected=true
             sfx(59)
             player_ship.hp=min(player_ship.hp+10,player_ship.max_hp)
@@ -1178,8 +1177,7 @@ end
 
 function collectible:update()
     if self.collected then return false end
-    local dx,dy=player_ship.x-self.x,player_ship.y-self.y
-    local dist2=dist_trig(dx,dy)
+    local dist2=vdist(player_ship,self.x,self.y)
     if dist2>20 then return false end
 
     if dist2<1 then
@@ -1223,18 +1221,17 @@ mine.__index=mine
 function mine.new(x,y,owner)return setmetatable({x=x,y=y,owner=owner,z=owner and 0 or 60},mine)end
 function mine:update()
     if self.z>0 then
-        self.z-=2
-        if self.z<=0 then self.z=0 end
+        self.z=max(0,self.z-2)
         return true
     end
     if not self.owner then
         particle_sys:explode(self.x,self.y,-terrain_h(self.x,self.y,true)*block_h,1.5)
         sfx(62)
-        if dist_trig(player_ship.x-self.x,player_ship.y-self.y)<2 then player_ship.hp-=15 end
+        if vdist(player_ship,self.x,self.y)<2 then player_ship.hp-=15 end
         return false
     end
     for t in all(self.owner==player_ship and enemies or{player_ship})do
-        if dist_trig(t.x-self.x,t.y-self.y)<2 then
+        if vdist(t,self.x,self.y)<2 then
             particle_sys:explode(self.x,self.y,-terrain_h(self.x,self.y,true)*block_h,1.5)
             t.hp-=15 sfx(62)
             return false
@@ -1265,6 +1262,7 @@ function ship.new(start_x, start_y, is_enemy)
         vz = 0,
         hover_height = 1,
         current_altitude = 0,
+        cam_alt = 0,
         angle = 0,
         accel = 0.025,
         friction = 0.95,
@@ -1276,7 +1274,7 @@ function ship.new(start_x, start_y, is_enemy)
         body_col = is_enemy and 8 or 12,
         outline_col = 7,
         shadow_col = 1,
-        gravity = 0.05,
+        gravity = 0.025,
         max_climb = 3,
         is_hovering = false,
         particle_timer = 0,
@@ -1431,14 +1429,14 @@ function ship:update()
     -- altitude physics
     local target_altitude=new_terrain+self.hover_height
     if self.is_hovering then
-        self.current_altitude=target_altitude self.vz=0
+        self.current_altitude+=(target_altitude-self.current_altitude)*0.3 self.vz=0
     else
         self.current_altitude+=self.vz
         self.vz-=self.gravity
         if self.current_altitude<=target_altitude then
             self.current_altitude=target_altitude self.vz=0 self.is_hovering=true
         end
-        self.vz*=0.99
+        self.vz*=0.995
     end
 
     -- exhaust particles
@@ -1486,8 +1484,9 @@ function ship:get_camera_target()
             fy+=(ne.y-fy)*self.cam_blend 
         end
     end
+    self.cam_alt+=(self.current_altitude-self.cam_alt)*0.08
     local sx=(fx-fy)*half_tile_width
-    local sy=(fx+fy)*half_tile_height - self.current_altitude*block_h
+    local sy=(fx+fy)*half_tile_height - self.cam_alt*block_h
     return 64-sx,64-sy
 end
 
@@ -1507,9 +1506,8 @@ function ship:draw()
     local p3y = sy + sin(back_angle + 0.15) * half_ship_len
 
     -- shadow
-    local terrain_height = terrain_h(self.x, self.y)
-    local shadow_offset = (self.current_altitude - terrain_height) * block_h
-    draw_triangle(fx, fy + shadow_offset, p2x, p2y + shadow_offset, p3x, p3y + shadow_offset, self.shadow_col)
+    local so=(self.current_altitude-terrain_h(self.x,self.y))*block_h
+    draw_triangle(fx,fy+so,p2x,p2y+so,p3x,p3y+so,self.shadow_col)
 
     -- body
     draw_triangle(fx, fy, p2x, p2y, p3x, p3y, self.body_col)
@@ -1552,7 +1550,8 @@ function update_projectiles()
 
         local targets=p.owner.is_enemy and {player_ship} or enemies
         for t in all(targets) do
-            local dx,dy=t.x-p.x,t.y-p.y
+            local dh=(p.z-t.current_altitude)/6
+            local dx,dy=t.x-p.x+dh,t.y-p.y+dh
             if dx*dx+dy*dy<0.5 then
                 t.hp-=3
                 sfx(58)
