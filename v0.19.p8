@@ -136,7 +136,7 @@ function _update60()
     if game_state=="startup" then
         -- intro timer + gentle drift
         startup_timer+=1
-        player_ship.vy=-0.1
+        player_ship.vy=-0.05
         player_ship.y+=player_ship.vy
 
         -- face along motion
@@ -150,7 +150,7 @@ function _update60()
         tile_manager:update_player_position(player_ship.x,player_ship.y)
 
         -- ambient particles
-        if startup_timer%3==0 then player_ship:spawn_particles(1,0) end
+        if startup_timer%6==0 then player_ship:spawn_particles(1,0) end
 
         -- camera snaps to ship
         local tx,ty=player_ship:get_camera_target()
@@ -159,12 +159,12 @@ function _update60()
         -- phase logic
         if startup_phase=="title" then
             if startup_view_range<8 then
-                startup_view_range+=0.5
+                startup_view_range+=0.25
                 view_range=flr(startup_view_range)
                 tile_manager.target_margin=view_range+2
             end
-            if(title_x1<20)title_x1+=6
-            if(title_x2>68)title_x2-=6
+            if(title_x1<20)title_x1+=3
+            if(title_x2>68)title_x2-=3
             if startup_view_range>=8 and title_x1>=20 and title_x2<=68 then
                 startup_phase="menu_select"
                 init_menu_select()
@@ -183,8 +183,8 @@ function _update60()
             player_ship:update()
             game_manager:update()
             local tx,ty=player_ship:get_camera_target()
-            cam_offset_x+= (tx-cam_offset_x)*0.3
-            cam_offset_y+= (ty-cam_offset_y)*0.3
+            cam_offset_x+= (tx-cam_offset_x)*0.15
+            cam_offset_y+= (ty-cam_offset_y)*0.15
         end
 
         update_projectiles()
@@ -476,7 +476,7 @@ function enter_customize_mode()
     tile_manager.target_margin=32
     tile_manager:update_player_position(player_ship.x,player_ship.y)
 
-    local y_start,y_spacing,delay_step=32,12,2
+    local y_start,y_spacing,delay_step=32,12,4
     local panel_index=0
 
     for i=1,#menu_options do
@@ -491,7 +491,7 @@ function enter_customize_mode()
     end
 
     local sb=panel.new(50,128,nil,12,"play",11)
-    sb.is_start=true sb.anim_delay=(panel_index+1)*delay_step+4
+    sb.is_start=true sb.anim_delay=(panel_index+1)*delay_step+8
     sb:set_position(50,105) add(customization_panels,sb)
 
     customization_panels[1].selected=true
@@ -551,7 +551,7 @@ function draw_world()
     -- water rings (update + draw)
     for i=#ws,1,-1 do
         local s=ws[i]
-        s.r+=0.18 s.life-=1
+        s.r+=0.09 s.life-=1
         local lx,ly
         for a=0,1,0.06 do
             local wx,wy=s.x+cos(a)*s.r,s.y+sin(a)*s.r
@@ -713,14 +713,14 @@ function floating_text.new(x, y, text, col)
         y = y,
         text = text,
         col = col or 7,
-        life = 60,
-        vy = -1,
+        life = 120,
+        vy = -0.5,
     }, floating_text)
 end
 
 function floating_text:update()
     self.y+=self.vy
-    self.vy*=0.95  -- slow down over time
+    self.vy*=0.975  -- slow down over time
     self.life-=1
     return self.life>0
 end
@@ -759,12 +759,12 @@ function panel:update()
     if self.anim_delay>0 then self.anim_delay-=1 return true end
 
     -- smooth move
-    self.x+=(self.target_x-self.x)*0.2
-    self.y+=(self.target_y-self.y)*0.2
+    self.x+=(self.target_x-self.x)*0.1
+    self.y+=(self.target_y-self.y)*0.1
     if abs(self.x-self.target_x)<0.5 then self.x,self.y=self.target_x,self.target_y end
 
     -- expand/contract
-    self.expand=self.selected and min(self.expand+1,3) or max(self.expand-1,0)
+    self.expand=self.selected and min(self.expand+0.5,3) or max(self.expand-0.5,0)
     return true
 end
 
@@ -817,13 +817,13 @@ function particle_sys:spawn(x,y,z,col,count)
             x+(rnd()-.5)*.1,
             y+(rnd()-.5)*.1,
             z,
-            (rnd()-.5)*.05,
-            (rnd()-.5)*.05,
+            (rnd()-.5)*.025,
+            (rnd()-.5)*.025,
             1+rnd(1),
-            20+rnd(10),
+            40+rnd(20),
             0,  -- smoke
             col or 0)
-        p.vz=-rnd()*0.3-0.2
+        p.vz=-rnd()*0.15-0.1
         add(self.list,p)
     end
 end
@@ -835,7 +835,7 @@ function particle_sys:explode(wx,wy,z,scale)
             -- Create particles in world space with world velocities
             local angle = rnd()
             local dist = rnd() * radius * scale * 0.1  -- convert pixel radius to world units
-            local vel = rnd() * speed * scale * 0.01   -- convert pixel speed to world units
+            local vel = rnd() * speed * scale * 0.005   -- convert pixel speed to world units
             
             add(self.list, make_particle(
                 wx + cos(angle) * dist,
@@ -850,7 +850,7 @@ function particle_sys:explode(wx,wy,z,scale)
     end
     -- core / medium / outer (fireballs)
     for i=1,3 do
-        add_group(i*2+2,i*0.5,4-i+rnd(i==1 and 2 or 1),i*5+10,flr((4-i)*scale+(i==2 and scale or 0)))
+        add_group(i*2+2,i*0.5,4-i+rnd(i==1 and 2 or 1),i*10+20,flr((4-i)*scale+(i==2 and scale or 0)))
     end
 end
 
@@ -862,9 +862,9 @@ function particle_sys:update()
         p.x+=p.vx 
         p.y+=p.vy 
         p.z+=p.vz
-        p.vx*=0.9 
-        p.vy*=0.9 
-        p.vz*=0.95
+        p.vx*=0.95
+        p.vy*=0.95
+        p.vz*=0.975
         
         p.life-=1
         if p.life<=0 then deli(self.list,i) end
@@ -1032,8 +1032,8 @@ function bomb_event:update()
 
     if time()>self.next_bomb then
         add(self.bombs,mine.new(
-            player_ship.x+player_ship.vx*12,
-            player_ship.y+player_ship.vy*12,
+            player_ship.x+player_ship.vx*24,
+            player_ship.y+player_ship.vy*24,
             nil
         ))
         self.next_bomb=time()+max(0.4,0.8-0.05*game_manager.difficulty_level)+rnd(0.3)
@@ -1223,7 +1223,7 @@ mine.__index=mine
 function mine.new(x,y,owner)return setmetatable({x=x,y=y,owner=owner,z=owner and 0 or 60},mine)end
 function mine:update()
     if self.z>0 then
-        self.z-=4
+        self.z-=2
         if self.z<=0 then self.z=0 end
         return true
     end
@@ -1266,21 +1266,21 @@ function ship.new(start_x, start_y, is_enemy)
         hover_height = 1,
         current_altitude = 0,
         angle = 0,
-        accel = 0.05,
-        friction = 0.9,
-        max_speed = is_enemy and 0.32 or 0.4,
-        projectile_speed = 0.4,
-        projectile_life = 40,
+        accel = 0.025,
+        friction = 0.95,
+        max_speed = is_enemy and 0.16 or 0.2,
+        projectile_speed = 0.2,
+        projectile_life = 80,
         fire_rate = is_enemy and 0.15 or 0.1,
         size = 11,
         body_col = is_enemy and 8 or 12,
         outline_col = 7,
         shadow_col = 1,
-        gravity = 0.2,
+        gravity = 0.05,
         max_climb = 3,
         is_hovering = false,
         particle_timer = 0,
-        ramp_boost = 0.2,
+        ramp_boost = 0.1,
         -- combat
         is_enemy = is_enemy,
         max_hp = is_enemy and 50 or 100,
@@ -1424,7 +1424,7 @@ function ship:update()
     local new_terrain=terrain_h(self.x,self.y)
     local height_diff=new_terrain-terrain_h(self.x-self.vx,self.y-self.vy)
     if self.is_hovering and height_diff>0 and speed>0.01 then
-        self.vz=min(height_diff*self.ramp_boost*speed*15, 1.5)  -- cap vertical velocity
+        self.vz=min(height_diff*self.ramp_boost*speed*30, 0.75)  -- cap vertical velocity
         self.is_hovering=false
     end
 
@@ -1438,7 +1438,7 @@ function ship:update()
         if self.current_altitude<=target_altitude then
             self.current_altitude=target_altitude self.vz=0 self.is_hovering=true
         end
-        self.vz*=0.98
+        self.vz*=0.99
     end
 
     -- exhaust particles
@@ -1457,9 +1457,9 @@ function ship:update()
     self.angle=atan2(self.vx-self.vy,(self.vx+self.vy)*0.5)
 
     -- water rings
-    if self.is_hovering and speed>0.2 then
+    if self.is_hovering and speed>0.1 then
         self.st=(self.st or 0)+1
-        if self.st>4 then add(ws,{x=self.x,y=self.y,r=0,life=28}) self.st=0 end
+        if self.st>8 then add(ws,{x=self.x,y=self.y,r=0,life=56}) self.st=0 end
     end
 end
 
@@ -1479,7 +1479,7 @@ function ship:get_camera_target()
             local d=dist_trig(e.x-fx,e.y-fy)
             if d<best then best=d ne=e end
         end
-        self.cam_blend=(self.cam_blend or 0)+(ne and 0.02 or -0.03)
+        self.cam_blend=(self.cam_blend or 0)+(ne and 0.01 or -0.015)
         self.cam_blend=mid(0,self.cam_blend,0.2)
         if ne and self.cam_blend>0 then 
             fx+=(ne.x-fx)*self.cam_blend 
@@ -1582,7 +1582,7 @@ end
 
 function ui_tick()
     -- tween box height (only expand for actual messages, not timer)
-    ui_box_h+=(ui_box_target_h-ui_box_h)*0.2
+    ui_box_h+=(ui_box_target_h-ui_box_h)*0.1
     if abs(ui_box_h-ui_box_target_h)<0.5 then ui_box_h=ui_box_target_h end
 
     -- nothing to type yet or box not expanded
@@ -1590,7 +1590,7 @@ function ui_tick()
 
     -- typewriter
     if ui_vis < #ui_msg then
-        ui_vis = min(ui_vis + ((#ui_msg > 15) and 3 or 1), #ui_msg)
+        ui_vis = min(ui_vis + ((#ui_msg > 15) and 1.5 or 0.5), #ui_msg)
     end
 
     -- timeout ヌ●★ clear & collapse
