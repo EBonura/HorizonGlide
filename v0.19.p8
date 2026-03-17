@@ -161,6 +161,7 @@ function _update60()
             if startup_view_range<8 then
                 startup_view_range+=0.5
                 view_range=flr(startup_view_range)
+                tile_manager.target_margin=view_range+2
             end
             if(title_x1<20)title_x1+=6
             if(title_x2>68)title_x2-=6
@@ -437,14 +438,10 @@ end
 
 
 function regenerate_world_live()
-    -- new terrain + clear cache
     terrain_perm,cell_cache=generate_permutation(current_seed),{}
-
-    -- rebuild tiles around current ship position
-    tile_manager:init()
+    tile_manager.cur_margin=0
     tile_manager:update_player_position(player_ship.x,player_ship.y)
-
-    -- reset altitude to new terrain
+    for _=1,view_range+2 do tile_manager:manage_cache() end
     player_ship:set_altitude()
 end
 
@@ -476,7 +473,7 @@ function enter_customize_mode()
     startup_phase="customize" customize_cursor=1 customization_panels={}
 
     -- temporarily expand cache margin for minimap (need るね32 tiles)
-    tile_manager.minimap_mode=true
+    tile_manager.target_margin=32
     tile_manager:update_player_position(player_ship.x,player_ship.y)
 
     local y_start,y_spacing,delay_step=32,12,2
@@ -510,7 +507,7 @@ end
 function init_game()
     music(0)
     pal() palt(0,false) palt(14,true)
-    tile_manager.minimap_mode,game_state=false,"game"
+    tile_manager.target_margin,game_state=view_range+2,"game"
     floating_texts,particle_sys.list,mines,projectiles,enemies,collectibles={},{},{},{},{},{}
     game_manager:reset()
     player_ship.dead,player_ship.hp,player_ship.last_shot_time=false,player_ship.max_hp,time()+0.5
@@ -1681,11 +1678,14 @@ end
 tile_manager = {
     player_x = 0,
     player_y = 0,
-    palette_cache = nil
+    palette_cache = nil,
+    cur_margin = 0,
+    target_margin = 2
 }
 
 function tile_manager:init()
     self.player_x, self.player_y = 0, 0
+    self.cur_margin=0
     -- precompute palette lookup table
     if not self.palette_cache then
         self.palette_cache={}
@@ -1702,23 +1702,20 @@ end
 
 function tile_manager:manage_cache()
     local px,py=self.player_x,self.player_y
-    local margin=self.minimap_mode and view_range*4 or view_range+2
-    local pxm,pym=px-margin,py-margin
-    local pxp,pyp=px+margin,py+margin
+    local cm=min(self.cur_margin,self.target_margin)
+    local pxm,pym=px-cm,py-cm
+    local pxp,pyp=px+cm,py+cm
     local cache=cell_cache
     local perm=terrain_perm
     local thresh=TERRAIN_THRESH
     local palcache=self.palette_cache
     local scale=menu_options[1].values[menu_options[1].current]
     local water_level=menu_options[2].values[menu_options[2].current]
-    local added=0
 
     for x=pxm,pxp do
-        if added>=15 then break end
         local row=cache[x]
         if not row then row={} cache[x]=row end
         for y=pym,pyp do
-            if added>=15 then break end
             if not row[y] then
                 local nx,ny=x/scale,y/scale
                 local cont=perlin2d(nx*.03,ny*.03,perm)*15
@@ -1730,7 +1727,6 @@ function tile_manager:manage_cache()
                 while h>thresh[i] do i+=1 end
                 local pc=palcache[i]
                 row[y]={pc[1],pc[2],pc[3],h}
-                added+=1
             end
         end
     end
@@ -1740,6 +1736,9 @@ function tile_manager:manage_cache()
             cache[x]=nil
         end
     end
+
+    if cm<self.target_margin then cm+=1 end
+    self.cur_margin=cm
 end
 
 
