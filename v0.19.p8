@@ -90,7 +90,7 @@ function _init()
     startup_timer,startup_view_range=0,0
     title_x1,title_x2=-64,128
 
-    -- camera + tile constants (needed before tile_manager)
+    -- camera + tile constants
     cam_offset_x,cam_offset_y=64,64
     view_range,half_tile_width,half_tile_height,block_h=0,12,6,2
 
@@ -118,8 +118,8 @@ function _init()
     terrain_perm,cell_cache=generate_permutation(current_seed),{}
 
 
-    tile_manager:init()
-    tile_manager:update_player_position(0,0)
+    tm_init()
+    tm_setpos(0,0)
 
     -- set ship altitude after tiles/terrain exist
     player_ship:set_altitude()
@@ -148,7 +148,7 @@ function _update60()
         player_ship.is_hovering=true
 
         -- stream tiles
-        tile_manager:update_player_position(player_ship.x,player_ship.y)
+        tm_setpos(player_ship.x,player_ship.y)
 
         -- ambient particles
         if startup_timer%6==0 then player_ship:spawn_particles(1,0) end
@@ -161,7 +161,7 @@ function _update60()
             if startup_view_range<8 then
                 startup_view_range+=0.25
                 view_range=flr(startup_view_range)
-                tile_manager.target_margin=view_range+2
+                tm_target=view_range+2
             end
             if(title_x1<20)title_x1+=3
             if(title_x2>68)title_x2-=3
@@ -203,7 +203,7 @@ function _update60()
     end
 
     particle_sys:update()
-    tile_manager:manage_cache()
+    tm_cache()
 end
 
 
@@ -438,9 +438,9 @@ end
 
 function regenerate_world_live()
     terrain_perm,cell_cache=generate_permutation(current_seed),{}
-    tile_manager.cur_margin=0
-    tile_manager:update_player_position(player_ship.x,player_ship.y)
-    for _=1,view_range+2 do tile_manager:manage_cache() end
+    tm_cm=0
+    tm_setpos(player_ship.x,player_ship.y)
+    for _=1,view_range+2 do tm_cache() end
     player_ship:set_altitude()
 end
 
@@ -472,8 +472,8 @@ function enter_customize_mode()
     startup_phase="customize" customize_cursor=1 customization_panels={}
 
     -- temporarily expand cache margin for minimap (need るね32 tiles)
-    tile_manager.target_margin=32
-    tile_manager:update_player_position(player_ship.x,player_ship.y)
+    tm_target=32
+    tm_setpos(player_ship.x,player_ship.y)
 
     local y_start,y_spacing,delay_step=32,12,4
     local panel_index=0
@@ -504,11 +504,11 @@ end
 function init_game()
     music(0)
     pal() palt(0,false) palt(14,true)
-    tile_manager.target_margin,game_state=view_range+2,"game"
+    tm_target,game_state=view_range+2,"game"
     floating_texts,particle_sys.list,mines,projectiles,enemies,collectibles={},{},{},{},{},{}
     game_manager:reset()
     player_ship.dead,player_ship.hp,player_ship.last_shot_time=false,player_ship.max_hp,time()+0.5
-    tile_manager:update_player_position(player_ship.x, player_ship.y)
+    tm_setpos(player_ship.x, player_ship.y)
     player_ship:set_altitude()
     ui_msg,ui_vis,ui_until,ui_rmsg="",0,0,""
     for _=1,8 do
@@ -1268,7 +1268,7 @@ function ship.new(start_x, start_y, is_enemy)
         outline_col = 7,
         shadow_col = 1,
         gravity = 0.025,
-        max_climb = 3,
+
         is_hovering = false,
         particle_timer = 0,
         ramp_boost = 0.1,
@@ -1381,7 +1381,7 @@ function ship:update()
     if self.is_enemy then
         self:ai_update()
     else
-        tile_manager:update_player_position(self.x,self.y)
+        tm_setpos(self.x,self.y)
 
         -- player input (iso mapping via rx/ry)
         local rx=(btn(➡️) and 1 or 0)-(btn(⬅️) and 1 or 0)
@@ -1660,41 +1660,33 @@ end
 
 
 
--- TILE MANAGER (optimized: inline generation + precomputed palette)
-tile_manager = {
-    player_x = 0,
-    player_y = 0,
-    palette_cache = nil,
-    cur_margin = 0,
-    target_margin = 2
-}
+-- TILE MANAGER (flat globals, inline generation + precomputed palette)
+tm_px,tm_py,tm_cm,tm_target=0,0,0,2
 
-function tile_manager:init()
-    self.player_x, self.player_y = 0, 0
-    self.cur_margin=0
-    -- precompute palette lookup table
-    if not self.palette_cache then
-        self.palette_cache={}
+function tm_init()
+    tm_px,tm_py,tm_cm=0,0,0
+    if not tm_pal then
+        tm_pal={}
         for i=1,8 do
             local p=(i-1)*3+1
-            self.palette_cache[i]={ord(TERRAIN_PAL_STR,p),ord(TERRAIN_PAL_STR,p+1),ord(TERRAIN_PAL_STR,p+2)}
+            tm_pal[i]={ord(TERRAIN_PAL_STR,p),ord(TERRAIN_PAL_STR,p+1),ord(TERRAIN_PAL_STR,p+2)}
         end
     end
 end
 
-function tile_manager:update_player_position(px, py)
-    self.player_x, self.player_y = flr(px), flr(py)
+function tm_setpos(px,py)
+    tm_px,tm_py=flr(px),flr(py)
 end
 
-function tile_manager:manage_cache()
-    local px,py=self.player_x,self.player_y
-    local cm=min(self.cur_margin,self.target_margin)
+function tm_cache()
+    local px,py=tm_px,tm_py
+    local cm=min(tm_cm,tm_target)
     local pxm,pym=px-cm,py-cm
     local pxp,pyp=px+cm,py+cm
     local cache=cell_cache
     local perm=terrain_perm
     local thresh=TERRAIN_THRESH
-    local palcache=self.palette_cache
+    local palcache=tm_pal
     local scale=menu_options[1].values[menu_options[1].current]
     local water_level=menu_options[2].values[menu_options[2].current]
 
@@ -1723,8 +1715,8 @@ function tile_manager:manage_cache()
         end
     end
 
-    if cm<self.target_margin then cm+=1 end
-    self.cur_margin=cm
+    if cm<tm_target then cm+=1 end
+    tm_cm=cm
 end
 
 
