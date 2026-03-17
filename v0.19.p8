@@ -154,8 +154,7 @@ function _update60()
         if startup_timer%6==0 then player_ship:spawn_particles(1,0) end
 
         -- camera snaps to ship
-        local tx,ty=player_ship:get_camera_target()
-        cam_offset_x,cam_offset_y=tx,ty
+        cam_offset_x,cam_offset_y=player_ship:get_camera_target()
 
         -- phase logic
         if startup_phase=="title" then
@@ -303,9 +302,8 @@ function draw_death()
 
         -- face (center) with pink transparent + eye crackle
         palt(14,true) palt(0,false)
-        if t<3 then if rnd()<0.4 then pal(8,0) end else pal(8,0) end
-        local fx,fy=cx-12,64-12
-        spr(64,fx,fy,3,3)
+        if t>=3 or rnd()<0.4 then pal(8,0) end
+        spr(64,cx-12,52,3,3)
         pal()
 
         -- continue (bottom)
@@ -384,7 +382,7 @@ function update_customize()
     update_all(customization_panels)
 
     -- navigation
-    local d=(btnp(⬆️) and -1) or (btnp(⬇️) and 1) or 0
+    local d=btnp(⬆️) and -1 or btnp(⬇️) and 1 or 0
     if d!=0 then
         sfx(57)
         customization_panels[customize_cursor].selected=false
@@ -421,7 +419,7 @@ function update_customize()
     end
 
     -- left/right adjustments
-    local lr=(btnp(⬅️) and -1) or (btnp(➡️) and 1) or 0
+    local lr=btnp(⬅️) and -1 or btnp(➡️) and 1 or 0
     if lr==0 then return end
     sfx(57)
 
@@ -483,9 +481,7 @@ function enter_customize_mode()
     for i=1,#menu_options do
         local o=menu_options[i]
         local y=y_start+panel_index*y_spacing
-        local text=o.is_action and "random" or opt_text(o)
-        local col=o.is_action and 5 or 6
-        local p=panel.new(-60,y,68,9,text,col)
+        local p=panel.new(-60,y,68,9,o.is_action and "random" or opt_text(o),o.is_action and 5 or 6)
         p.option_index=i p.anim_delay=panel_index*delay_step
         p:set_position(6,y) add(customization_panels,p)
         panel_index+=1
@@ -887,7 +883,7 @@ function particle_sys:draw()
                 else
                     pset(screen_x,screen_y,p.col)
                 end
-            elseif (alpha>0.25 and rnd()>0.3) or (alpha<=0.25 and rnd()>0.6) then
+            elseif rnd()>(alpha>0.25 and 0.3 or 0.6) then
                 pset(screen_x,screen_y,p.col)
             end
         else
@@ -962,8 +958,7 @@ function gm:update()
         -- Only update UI if message changed
         if new_msg != self.tut_msg then
             self.tut_msg = new_msg
-            local dur = (new_msg == "good luck!") and 2 or 99
-            ui_say(new_msg, dur, 11)
+            ui_say(new_msg, (new_msg == "good luck!") and 2 or 99, 11)
         end
         return  -- skip events during tutorial
     end
@@ -1137,8 +1132,7 @@ function circle_event:draw()
         local circle=self.circles[i]
         if not circle.collected then
             local sx,sy=iso(circle.x,circle.y)
-            local cx,cy=flr(circle.x),flr(circle.y)
-            local base_y=sy-terrain_h(cx,cy)*block_h
+            local base_y=sy-terrain_h(flr(circle.x),flr(circle.y))*block_h
 
             -- highlight current target
             local cur=(i==self.current_target)
@@ -1196,9 +1190,8 @@ function collectible:draw()
     if not self.collected then
         local sx, sy = iso(self.x, self.y)
         local h = terrain_h(self.x, self.y) * block_h
-        local float = sin(time() * 2 + self.x + self.y)
         ovalfill(sx-5, sy-h+3, sx+5, sy-h+5, 1)  -- shadow
-        spr(67, sx - 8, sy - h - 8 + float, 2, 2)
+        spr(67, sx - 8, sy - h - 8 + sin(time()*2+self.x+self.y), 2, 2)
     end
 end
 
@@ -1369,8 +1362,7 @@ end
 function ship:update_targeting()
     local fx,fy=cos(self.angle),sin(self.angle)
     local best,found=15,nil
-    local list=self.is_enemy and {player_ship} or enemies
-    for t in all(list) do
+    for t in all(self.is_enemy and {player_ship} or enemies) do
         if t~=self then
             local dx,dy=t.x-self.x,t.y-self.y
             local d=dist_trig(dx,dy)
@@ -1442,8 +1434,7 @@ function ship:update()
     -- exhaust particles
     if self.is_hovering and speed>0.01 then
         self.particle_timer+=1
-        local spawn_rate=max(1,5-flr(speed*10))
-        if self.particle_timer>=spawn_rate then
+        if self.particle_timer>=max(1,5-flr(speed*10)) then
             self.particle_timer=0
             self:spawn_particles(1+flr(speed*5))
         end
@@ -1519,16 +1510,15 @@ function ship:draw()
 
     -- thrusters
     if self.is_hovering then
-        local c = (sin(time() * 5) > 0) and 10 or 9
+        local c = sin(time()*5)>0 and 10 or 9
         pset(p2x, p2y, c)
         pset(p3x, p3y, c)
     end
 
     -- enemy health bar
     if self.is_enemy then
-        local w = self.hp / self.max_hp * 10
         rectfill(sx - 5, sy - 10, sx + 5, sy - 9, 5)
-        rectfill(sx - 5, sy - 10, sx - 5 + w, sy - 9, 8)
+        rectfill(sx - 5, sy - 10, sx - 5 + self.hp/self.max_hp*10, sy - 9, 8)
     end
 end
 
@@ -1548,8 +1538,7 @@ function update_projectiles()
         local p=projectiles[i]
         p.x+=p.vx p.y+=p.vy p.life-=1
 
-        local targets=p.owner.is_enemy and {player_ship} or enemies
-        for t in all(targets) do
+        for t in all(p.owner.is_enemy and {player_ship} or enemies) do
             local dh=(p.z-t.current_altitude)/6
             local dx,dy=t.x-p.x+dh,t.y-p.y+dh
             if dx*dx+dy*dy<0.5 then
@@ -1589,7 +1578,7 @@ function ui_tick()
 
     -- typewriter
     if ui_vis < #ui_msg then
-        ui_vis = min(ui_vis + ((#ui_msg > 15) and 1.5 or 0.5), #ui_msg)
+        ui_vis = min(ui_vis + (#ui_msg>15 and 1.5 or 0.5), #ui_msg)
     end
 
     -- timeout ヌ●★ clear & collapse
@@ -1609,9 +1598,8 @@ function combat_event.new()
     local self=setmetatable({completed=false,success=false,start_count=0,last_msg=nil},combat_event)
     ui_say("enemy wave incoming!",3,8)
 
-    local n=min(1+game_manager.difficulty_level,6)
     enemies={}
-    for _=1,n do
+    for _=1,min(1+game_manager.difficulty_level,6) do
         local a,d=rnd(1),10+rnd(5)
         local ex,ey=player_ship.x+cos(a)*d,player_ship.y+sin(a)*d
         local e=ship.new(ex,ey,true) e.hp=50
@@ -1646,8 +1634,7 @@ function combat_event:draw()
         local q=e.hp/e.max_hp
         local dist=dist_trig(player_ship.x-e.x,player_ship.y-e.y)
         local mode=(q<=0.3 and dist>15) or (q>0.3 and (dist>20 or ((time()+e.ai_phase)%6)<3))
-        local col=mode and 8 or 9
-        draw_circle_arrow(e.x,e.y,col)
+        draw_circle_arrow(e.x,e.y,mode and 8 or 9)
     end
     draw_all(enemies)
 end
