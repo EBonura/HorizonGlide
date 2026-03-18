@@ -23,11 +23,10 @@ half_tile_width=12
 half_tile_height=6
 block_h=2
 view_range=8
-cam_offset_x=64
-cam_offset_y=64
 cell_cache={}
-scroll_x=0
-scroll_y=0
+-- camera in world space
+cam_wx=0
+cam_wy=0
 
 -- terrain gen (simple sin hills)
 function gen_tile(x,y)
@@ -55,14 +54,10 @@ function ensure_cached(x,y)
     end
 end
 
-function iso(x,y)
-    return cam_offset_x+(x-y)*half_tile_width,
-           cam_offset_y+(x+y)*half_tile_height
-end
 
 function diamond(sx,sy,c)
     local htw=half_tile_width
-    local hth=flr(half_tile_height)
+    local hth=-flr(-half_tile_height)
     if hth<1 then hth=1 end
     local step=htw/hth
     local w=htw
@@ -78,36 +73,38 @@ end
 -- works at any fractional scale)
 function draw_side_l(sx,sy2,hp,cy,htw,hth,c)
     local lb=sx-htw
-    for i=0,hp do line(lb,sy2+i,sx,cy+i,c) end
+    for i=0,hp+1 do line(lb,sy2+i,sx,cy+i,c) end
 end
 
 function draw_side_r(sx,sy2,hp,cy,htw,hth,c)
     local rb=sx+htw
-    for i=0,hp do line(rb,sy2+i,sx,cy+i,c) end
+    for i=0,hp+1 do line(rb,sy2+i,sx,cy+i,c) end
 end
 
 function draw_world()
-    local px=flr(scroll_x)
-    local py=flr(scroll_y)
     local htw=half_tile_width
     local hth=half_tile_height
     local bh=block_h
-    local co_x=cam_offset_x-(scroll_x-px)*htw*2
-    local co_y=cam_offset_y-(scroll_y-py)*hth*2
+    local co_x=64-(cam_wx-cam_wy)*htw
+    local co_y=64-(cam_wx+cam_wy)*hth
     local vr=view_range
 
+    -- iteration center = camera world pos
+    local wcx=flr(cam_wx)
+    local wcy=flr(cam_wy)
+
     -- ensure cache
-    for x=px-vr-1,px+vr+1 do
-        for y=py-vr-1,py+vr+1 do
+    for x=wcx-vr-1,wcx+vr+1 do
+        for y=wcy-vr-1,wcy+vr+1 do
             ensure_cached(x,y)
         end
     end
 
     -- draw water
-    for x=px-vr,px+vr do
+    for x=wcx-vr,wcx+vr do
         local row=cell_cache[x]
         if row then
-            for y=py-vr,py+vr do
+            for y=wcy-vr,wcy+vr do
                 local t=row[y]
                 if t and t[4]<=0 then
                     local sx=co_x+(x-y)*htw
@@ -121,11 +118,11 @@ function draw_world()
     end
 
     -- draw land
-    for x=px-vr,px+vr do
+    for x=wcx-vr,wcx+vr do
         local row=cell_cache[x]
         local nrow=cell_cache[x+1]
         if row then
-            for y=py-vr,py+vr do
+            for y=wcy-vr,wcy+vr do
                 local t=row[y]
                 if t then
                     local h=t[4]
@@ -193,12 +190,13 @@ function _update60()
     block_h=smooth_bh
     view_range=flr(smooth_vr)+1
 
-    -- scroll (arrows = screen-space movement)
-    local spd=0.05
-    if btn(0) then scroll_x-=spd scroll_y+=spd end
-    if btn(1) then scroll_x+=spd scroll_y-=spd end
-    if btn(2) then scroll_x-=spd scroll_y-=spd end
-    if btn(3) then scroll_x+=spd scroll_y+=spd end
+    -- scroll (1 screen-pixel per frame)
+    local sx=0.5/half_tile_width
+    local sy=0.5/half_tile_height
+    if btn(0) then cam_wx-=sx cam_wy+=sx end
+    if btn(1) then cam_wx+=sx cam_wy-=sx end
+    if btn(2) then cam_wx-=sy cam_wy-=sy end
+    if btn(3) then cam_wx+=sy cam_wy+=sy end
 end
 
 function _draw()
