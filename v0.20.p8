@@ -7,7 +7,14 @@ __lua__
 -- Helper functions
 function dist_trig(dx, dy) local ang = atan2(dx, dy) return dx * cos(ang) + dy * sin(ang) end
 function iso(x,y) return cam_offset_x+(x-y)*half_tile_width, cam_offset_y+(x+y)*half_tile_height end
+function vdist(s,ox,oy) local dh=(s.current_altitude-terrain_h(ox,oy))/6 return dist_trig(s.x-ox-dh,s.y-oy-dh) end
 
+hc=split"0,0,1,0,5,1,5,6,2,4,9,3,13,2,8,9"
+function printx(s,x,y,c)
+    clip(0,y,128,3) print(s,x,y,c)
+    clip(0,y+3,128,3) print(s,x,y,hc[c+1])
+    clip()
+end
 
 function fmt2(n)
     local s=flr(n*100+0.5)
@@ -64,11 +71,11 @@ TERRAIN_PAL_STR = "\1\0\0\12\1\1\15\4\2\3\1\0\11\3\1\4\2\0\6\5\0\7\6\5"
 TERRAIN_THRESH = split"-2,0,2,6,12,18,24,99"
 
 function terrain(x,y)
-    -- simple lookup - generation handled by tile_manager
     x,y=flr(x),flr(y)
-    local c=cell_cache[x..","..y]
+    local row=cell_cache[x]
+    local c=row and row[y]
     if c then return unpack(c) end
-    return 1,0,0,0  -- default if not cached
+    return 1,0,0,0
 end
 
 function terrain_h(x,y,clamp)
@@ -80,7 +87,7 @@ end
 
 -- MAIN PICO-8 FUNCTIONS
 function _init()
-    music(32)
+    music(32,0,14)
 
     palt(0,false) palt(14,true)
 
@@ -89,7 +96,7 @@ function _init()
     startup_timer,startup_view_range=0,0
     title_x1,title_x2=-64,128
 
-    -- camera + tile constants (needed before tile_manager)
+    -- camera + tile constants
     cam_offset_x,cam_offset_y=64,64
     view_range,half_tile_width,half_tile_height,block_h=0,12,6,2
 
@@ -117,26 +124,26 @@ function _init()
     terrain_perm,cell_cache=generate_permutation(current_seed),{}
 
 
-    tile_manager:init()
-    tile_manager:update_player_position(0,0)
+    tm_init()
+    tm_setpos(0,0)
 
     -- set ship altitude after tiles/terrain exist
     player_ship:set_altitude()
 
     -- top/right UI (no ui_typing_started needed)
     ui_msg,ui_vis,ui_until,ui_col,ui_rmsg="",0,0,7,""
-    ui_box_h,ui_box_target_h=6,6
+    ui_box_h,ui_box_target_h,ui_shake=6,6,0
 end
 
 
 
 
 
-function _update()
+function _update60()
     if game_state=="startup" then
         -- intro timer + gentle drift
         startup_timer+=1
-        player_ship.vy=-0.1
+        player_ship.vy=-0.05
         player_ship.y+=player_ship.vy
 
         -- face along motion
@@ -147,24 +154,24 @@ function _update()
         player_ship.is_hovering=true
 
         -- stream tiles
-        tile_manager:update_player_position(player_ship.x,player_ship.y)
+        tm_setpos(player_ship.x,player_ship.y)
 
         -- ambient particles
-        if startup_timer%3==0 then player_ship:spawn_particles(1,0) end
+        if startup_timer%6==0 then player_ship:spawn_particles(1,0) end
 
         -- camera snaps to ship
-        local tx,ty=player_ship:get_camera_target()
-        cam_offset_x,cam_offset_y=tx,ty
+        cam_offset_x,cam_offset_y=player_ship:get_camera_target()
 
         -- phase logic
         if startup_phase=="title" then
-            if startup_view_range<7 then
-                startup_view_range+=0.5
+            if startup_view_range<8 then
+                startup_view_range+=0.25
                 view_range=flr(startup_view_range)
+                tm_target=view_range+2
             end
-            if(title_x1<20)title_x1+=6
-            if(title_x2>68)title_x2-=6
-            if startup_view_range>=7 and title_x1>=20 and title_x2<=68 then
+            if(title_x1<20)title_x1+=3
+            if(title_x2>68)title_x2-=3
+            if startup_view_range>=8 and title_x1>=20 and title_x2<=68 then
                 startup_phase="menu_select"
                 init_menu_select()
             end
@@ -182,8 +189,8 @@ function _update()
             player_ship:update()
             game_manager:update()
             local tx,ty=player_ship:get_camera_target()
-            cam_offset_x+= (tx-cam_offset_x)*0.3
-            cam_offset_y+= (ty-cam_offset_y)*0.3
+            cam_offset_x+= (tx-cam_offset_x)*0.15
+            cam_offset_y+= (ty-cam_offset_y)*0.15
         end
 
         update_projectiles()
@@ -202,7 +209,7 @@ function _update()
     end
 
     particle_sys:update()
-    tile_manager:manage_cache()
+    tm_cache()
 end
 
 
@@ -217,7 +224,6 @@ function _draw()
     else -- "death"
         draw_death()
     end
-    printh("mem:"..stat(0).." cpu:"..stat(1))
 end
 
 
@@ -298,13 +304,12 @@ function draw_death()
 
         -- score (top)
         local s="score: "..flr(game_manager.player_score)
-        print(s,cx-#s*2,30,7)
+        printx(s,cx-#s*2,30,7)
 
         -- face (center) with pink transparent + eye crackle
         palt(14,true) palt(0,false)
-        if t<3 then if rnd()<0.4 then pal(8,0) end else pal(8,0) end
-        local fx,fy=cx-12,64-12
-        spr(64,fx,fy,3,3)
+        if t>=3 or rnd()<0.4 then pal(8,0) end
+        spr(64,cx-12,52,3,3)
         pal()
 
         -- continue (bottom)
@@ -383,7 +388,7 @@ function update_customize()
     update_all(customization_panels)
 
     -- navigation
-    local d=(btnp(⬆️) and -1) or (btnp(⬇️) and 1) or 0
+    local d=btnp(⬆️) and -1 or btnp(⬇️) and 1 or 0
     if d!=0 then
         sfx(57)
         customization_panels[customize_cursor].selected=false
@@ -393,7 +398,7 @@ function update_customize()
 
     local p=customization_panels[customize_cursor]
     if p.is_start then
-        if btnp(❎) then sfx(57) view_range=7 init_game() end
+        if btnp(❎) then sfx(57) view_range=8 init_game() end
         return
     end
 
@@ -420,7 +425,7 @@ function update_customize()
     end
 
     -- left/right adjustments
-    local lr=(btnp(⬅️) and -1) or (btnp(➡️) and 1) or 0
+    local lr=btnp(⬅️) and -1 or btnp(➡️) and 1 or 0
     if lr==0 then return end
     sfx(57)
 
@@ -438,14 +443,10 @@ end
 
 
 function regenerate_world_live()
-    -- new terrain + clear cache
     terrain_perm,cell_cache=generate_permutation(current_seed),{}
-
-    -- rebuild tiles around current ship position
-    tile_manager:init()
-    tile_manager:update_player_position(player_ship.x,player_ship.y)
-
-    -- reset altitude to new terrain
+    tm_cm=0
+    tm_setpos(player_ship.x,player_ship.y)
+    for _=1,view_range+2 do tm_cache() end
     player_ship:set_altitude()
 end
 
@@ -464,7 +465,7 @@ function update_menu_select()
     if btnp(❎) then
         sfx(57)
         if play_panel.selected then
-            view_range=7
+            view_range=8
             init_game()
         else
             enter_customize_mode()
@@ -477,25 +478,23 @@ function enter_customize_mode()
     startup_phase="customize" customize_cursor=1 customization_panels={}
 
     -- temporarily expand cache margin for minimap (need るね32 tiles)
-    tile_manager.minimap_mode=true
-    tile_manager:update_player_position(player_ship.x,player_ship.y)
+    tm_target=32
+    tm_setpos(player_ship.x,player_ship.y)
 
-    local y_start,y_spacing,delay_step=32,12,2
+    local y_start,y_spacing,delay_step=32,12,4
     local panel_index=0
 
     for i=1,#menu_options do
         local o=menu_options[i]
         local y=y_start+panel_index*y_spacing
-        local text=o.is_action and "random" or opt_text(o)
-        local col=o.is_action and 5 or 6
-        local p=panel.new(-60,y,68,9,text,col)
+        local p=panel.new(-60,y,68,9,o.is_action and "random" or opt_text(o),6)
         p.option_index=i p.anim_delay=panel_index*delay_step
         p:set_position(6,y) add(customization_panels,p)
         panel_index+=1
     end
 
     local sb=panel.new(50,128,nil,12,"play",11)
-    sb.is_start=true sb.anim_delay=(panel_index+1)*delay_step+4
+    sb.is_start=true sb.anim_delay=(panel_index+1)*delay_step+8
     sb:set_position(50,105) add(customization_panels,sb)
 
     customization_panels[1].selected=true
@@ -511,11 +510,11 @@ end
 function init_game()
     music(0)
     pal() palt(0,false) palt(14,true)
-    tile_manager.minimap_mode,game_state=false,"game"
+    tm_target,game_state=view_range+2,"game"
     floating_texts,particle_sys.list,mines,projectiles,enemies,collectibles={},{},{},{},{},{}
     game_manager:reset()
     player_ship.dead,player_ship.hp,player_ship.last_shot_time=false,player_ship.max_hp,time()+0.5
-    tile_manager:update_player_position(player_ship.x, player_ship.y)
+    tm_setpos(player_ship.x, player_ship.y)
     player_ship:set_altitude()
     ui_msg,ui_vis,ui_until,ui_rmsg="",0,0,""
     for _=1,8 do
@@ -529,29 +528,25 @@ end
 
 function draw_world()
     local px,py=flr(player_ship.x),flr(player_ship.y)
-
-    -- v3 optimization: pre-fetch all tiles, inline drawing, localize globals
-    local tiles={}
-    for x=px-view_range,px+view_range do
-        for y=py-view_range,py+view_range do
-            local top,side,dark,h=terrain(x,y)
-            tiles[x..","..y]={top,side,dark,h}
-        end
-    end
-
-    local htw,hth,co_x,co_y,bh,t_val=half_tile_width,half_tile_height,cam_offset_x,cam_offset_y,block_h,time()
+    local htw,hth,co_x,co_y,bh=half_tile_width,half_tile_height,cam_offset_x,cam_offset_y,block_h
+    local cc=cell_cache
+    local vr=view_range
+    local t_val=time()
 
     -- draw water
-    for x=px-view_range,px+view_range do
-        for y=py-view_range,py+view_range do
-            local t=tiles[x..","..y]
-            local h=t[4]
-            if h<=0 then
-                local bsx,bsy=(x-y)*htw,(x+y)*hth
-                local sx,sy=co_x+bsx,co_y+bsy
-                diamond(sx,sy,t[1])
-                local yb=flr(sy+((x+y)&1)+sin(t_val+(x+y)/8))
-                line(sx-htw,yb,sx+htw,yb,(h<=-2) and 12 or 1)
+    for x=px-vr,px+vr do
+        local row=cc[x]
+        if row then
+            for y=py-vr,py+vr do
+                local t=row[y]
+                if t and t[4]<=0 then
+                    local sx,sy=co_x+(x-y)*htw,co_y+(x+y)*hth
+                    if sx>-htw and sx<128+htw and sy>-hth and sy<128+hth then
+                        diamond(sx,sy,t[1])
+                        local yb=flr(sy+((x+y)&1)+sin(t_val+(x+y)/8))
+                        line(sx-htw,yb,sx+htw,yb,(t[4]<=-2) and 12 or 1)
+                    end
+                end
             end
         end
     end
@@ -559,7 +554,7 @@ function draw_world()
     -- water rings (update + draw)
     for i=#ws,1,-1 do
         local s=ws[i]
-        s.r+=0.18 s.life-=1
+        s.r+=0.09 s.life-=1
         local lx,ly
         for a=0,1,0.06 do
             local wx,wy=s.x+cos(a)*s.r,s.y+sin(a)*s.r
@@ -573,32 +568,37 @@ function draw_world()
         if s.life<=0 then deli(ws,i) end
     end
 
-    -- draw land with pre-fetched neighbor heights
-    for x=px-view_range,px+view_range do
-        for y=py-view_range,py+view_range do
-            local t=tiles[x..","..y]
-            local h=t[4]
-            if h>0 then
-                local bsx,bsy=(x-y)*htw,(x+y)*hth
-                local sx,sy=co_x+bsx,co_y+bsy
-                local hp=h*bh
-                local sy2=sy-hp
-                local cy=co_y+bsy+hth-hp
-
-                local ts=tiles[x..","..(y+1)]
-                local te=tiles[(x+1)..","..y]
-                local hs=ts and ts[4] or 0
-                local he=te and te[4] or 0
-
-                if hs<h then
-                    local lb=sx-htw
-                    for i=0,hp do line(lb,sy2+i,sx,cy+i,t[2]) end
+    -- draw land
+    for x=px-vr,px+vr do
+        local row=cc[x]
+        local nrow=cc[x+1]
+        if row then
+            for y=py-vr,py+vr do
+                local t=row[y]
+                if t then
+                    local h=t[4]
+                    if h>0 then
+                        local sx,sy=co_x+(x-y)*htw,co_y+(x+y)*hth
+                        local hp=h*bh
+                        local sy2=sy-hp
+                        if sx>-htw and sx<128+htw and sy+hth>0 and sy2-hth<128 then
+                            local cy=co_y+(x+y)*hth+hth-hp
+                            local ts=row[y+1]
+                            local te=nrow and nrow[y]
+                            local hs=ts and ts[4] or 0
+                            local he=te and te[4] or 0
+                            if hs<h then
+                                local lb=sx-htw
+                                for i=0,hp do line(lb,sy2+i,sx,cy+i,t[2]) end
+                            end
+                            if he<h then
+                                local rb=sx+htw
+                                for i=0,hp do line(rb,sy2+i,sx,cy+i,t[3]) end
+                            end
+                            diamond(sx,sy2,t[1])
+                        end
+                    end
                 end
-                if he<h then
-                    local rb=sx+htw
-                    for i=0,hp do line(rb,sy2+i,sx,cy+i,t[3]) end
-                end
-                diamond(sx,sy2,t[1])
             end
         end
     end
@@ -646,11 +646,11 @@ end
 
 
 
-function draw_segmented_bar(x, y, value, max_value, filled_col, empty_col)
+function draw_segmented_bar(x, y, value, max_value, filled_col)
     local filled=flr(value*15/max_value)
     for i=0,14 do
         local s=x+i*4
-        rectfill(s,y,s+2,y+1,(i<filled) and filled_col or empty_col)
+        rectfill(s,y,s+2,y+1,(i<filled) and filled_col or 5)
     end
 end
 
@@ -676,12 +676,14 @@ function draw_ui()
 
     -- Only draw sprite when expanded enough
     if h > 25 then
-        spr(64,102,3,3,3)
+        local sx,sy=102,3
+        if ui_shake>0 then sx+=rnd(3) sy+=rnd(3) end
+        spr(64,sx,sy,3,3)
         if ui_msg!="" then
             -- Mouth animation
             if (time()*8)%2<1 then spr(99,110,19) end
             -- Text
-            print(sub(ui_msg,1,ui_vis),4,3,ui_col)
+            printx(sub(ui_msg,1,ui_vis),4,3,ui_col)
         end
     end
 
@@ -690,17 +692,19 @@ function draw_ui()
 
     -- Timer outside box (no expansion needed)
     if ui_rmsg!="" and ui_msg=="" then
-        print(ui_rmsg,4,3,10)
+        printx(ui_rmsg,4,3,10)
     end
 
     -- bottom HUD
+    if ui_shake>0 then camera(0,-rnd(3)) ui_shake-=1 end
     sspr(0,16,128,16,0,112)
-    draw_segmented_bar(5,117,player_ship.hp,100,player_ship.hp>30 and 11 or 8,5)
-    draw_segmented_bar(5,120,player_ship.ammo,player_ship.max_ammo,12,5)
-    draw_segmented_bar(5,123,player_ship.mines,player_ship.max_mines,9,5)
+    draw_segmented_bar(5,117,player_ship.hp,100,player_ship.hp>30 and 11 or 8)
+    draw_segmented_bar(5,120,player_ship.ammo,player_ship.max_ammo,12)
+    draw_segmented_bar(5,123,player_ship.mines,player_ship.max_mines,9)
 
     local score_text = sub("00000"..flr(game_manager.display_score),-6)
-    print(score_text, 125 - #score_text * 4, 120, 10)
+    printx(score_text, 125 - #score_text * 4, 120, 10)
+    camera()
 end
 
 
@@ -716,14 +720,14 @@ function floating_text.new(x, y, text, col)
         y = y,
         text = text,
         col = col or 7,
-        life = 60,
-        vy = -1,
+        life = 40,
+        vy = -1.5,
     }, floating_text)
 end
 
 function floating_text:update()
     self.y+=self.vy
-    self.vy*=0.95  -- slow down over time
+    self.vy+=0.06
     self.life-=1
     return self.life>0
 end
@@ -731,7 +735,7 @@ end
 function floating_text:draw()
     local w,x1=#self.text*4,self.x-#self.text*2
     rrectfill(x1-1,self.y-1,w+2,7,1,0)
-    print(self.text,x1,self.y,self.col)
+    printx(self.text,x1,self.y,self.col)
 end
 
 -- PANEL CLASS
@@ -762,12 +766,11 @@ function panel:update()
     if self.anim_delay>0 then self.anim_delay-=1 return true end
 
     -- smooth move
-    self.x+=(self.target_x-self.x)*0.2
-    self.y+=(self.target_y-self.y)*0.2
-    if abs(self.x-self.target_x)<0.5 then self.x,self.y=self.target_x,self.target_y end
+    self.x+=(self.target_x-self.x)*0.1
+    self.y+=(self.target_y-self.y)*0.1
 
     -- expand/contract
-    self.expand=self.selected and min(self.expand+1,3) or max(self.expand-1,0)
+    self.expand=self.selected and min(self.expand+0.5,3) or max(self.expand-0.5,0)
     return true
 end
 
@@ -784,7 +787,7 @@ function panel:draw()
 
     -- centered text
     local tx,ty,tcol=dx+(dw-#self.text*4)/2,dy+(dh-5)/2,self.selected and self.col or 7
-    print(self.text, tx, ty, tcol)
+    printx(self.text, tx, ty, tcol)
 
     -- draw arrows for option panels (but not action buttons)
     if self.option_index then
@@ -820,13 +823,13 @@ function particle_sys:spawn(x,y,z,col,count)
             x+(rnd()-.5)*.1,
             y+(rnd()-.5)*.1,
             z,
-            (rnd()-.5)*.05,
-            (rnd()-.5)*.05,
+            (rnd()-.5)*.025,
+            (rnd()-.5)*.025,
             1+rnd(1),
-            20+rnd(10),
+            40+rnd(20),
             0,  -- smoke
             col or 0)
-        p.vz=-rnd()*0.3-0.2
+        p.vz=-rnd()*0.15-0.1
         add(self.list,p)
     end
 end
@@ -838,7 +841,7 @@ function particle_sys:explode(wx,wy,z,scale)
             -- Create particles in world space with world velocities
             local angle = rnd()
             local dist = rnd() * radius * scale * 0.1  -- convert pixel radius to world units
-            local vel = rnd() * speed * scale * 0.01   -- convert pixel speed to world units
+            local vel = rnd() * speed * scale * 0.005   -- convert pixel speed to world units
             
             add(self.list, make_particle(
                 wx + cos(angle) * dist,
@@ -853,7 +856,7 @@ function particle_sys:explode(wx,wy,z,scale)
     end
     -- core / medium / outer (fireballs)
     for i=1,3 do
-        add_group(i*2+2,i*0.5,4-i+rnd(i==1 and 2 or 1),i*5+10,flr((4-i)*scale+(i==2 and scale or 0)))
+        add_group(i*2+2,i*0.5,4-i+rnd(i==1 and 2 or 1),i*10+20,flr((4-i)*scale+(i==2 and scale or 0)))
     end
 end
 
@@ -865,9 +868,9 @@ function particle_sys:update()
         p.x+=p.vx 
         p.y+=p.vy 
         p.z+=p.vz
-        p.vx*=0.9 
-        p.vy*=0.9 
-        p.vz*=0.95
+        p.vx*=0.95
+        p.vy*=0.95
+        p.vz*=0.975
         
         p.life-=1
         if p.life<=0 then deli(self.list,i) end
@@ -890,7 +893,7 @@ function particle_sys:draw()
                 else
                     pset(screen_x,screen_y,p.col)
                 end
-            elseif (alpha>0.25 and rnd()>0.3) or (alpha<=0.25 and rnd()>0.6) then
+            elseif rnd()>(alpha>0.25 and 0.3 or 0.6) then
                 pset(screen_x,screen_y,p.col)
             end
         else
@@ -965,8 +968,7 @@ function gm:update()
         -- Only update UI if message changed
         if new_msg != self.tut_msg then
             self.tut_msg = new_msg
-            local dur = (new_msg == "good luck!") and 2 or 99
-            ui_say(new_msg, dur, 11)
+            ui_say(new_msg, (new_msg == "good luck!") and 2 or 99, 11)
         end
         return  -- skip events during tutorial
     end
@@ -1018,7 +1020,7 @@ function bomb_event.new()
     return setmetatable({
         bombs={},
         next_bomb=time(),
-        end_time=time()+12,
+        end_time=time()+8,
         completed=false,
         success=false
     },bomb_event)
@@ -1035,11 +1037,11 @@ function bomb_event:update()
 
     if time()>self.next_bomb then
         add(self.bombs,mine.new(
-            player_ship.x+player_ship.vx*12,
-            player_ship.y+player_ship.vy*12,
+            player_ship.x+player_ship.vx*24,
+            player_ship.y+player_ship.vy*24,
             nil
         ))
-        self.next_bomb=time()+max(0.4,0.8-0.05*game_manager.difficulty_level)+rnd(0.3)
+        self.next_bomb=time()+max(0.6,0.8-0.05*game_manager.difficulty_level)+rnd(0.3)
     end
 
     prune_update(self.bombs)
@@ -1098,8 +1100,7 @@ function circle_event:update()
     -- rings
     local circle=self.circles[self.current_target]
     if circle and not circle.collected then
-        local dx,dy=player_ship.x-circle.x,player_ship.y-circle.y
-        if dist_trig(dx,dy)<circle.radius then
+        if vdist(player_ship,circle.x,circle.y)<circle.radius then
             circle.collected=true
             sfx(59)
             player_ship.hp=min(player_ship.hp+10,player_ship.max_hp)
@@ -1141,8 +1142,7 @@ function circle_event:draw()
         local circle=self.circles[i]
         if not circle.collected then
             local sx,sy=iso(circle.x,circle.y)
-            local cx,cy=flr(circle.x),flr(circle.y)
-            local base_y=sy-terrain_h(cx,cy)*block_h
+            local base_y=sy-terrain_h(flr(circle.x),flr(circle.y))*block_h
 
             -- highlight current target
             local cur=(i==self.current_target)
@@ -1181,8 +1181,7 @@ end
 
 function collectible:update()
     if self.collected then return false end
-    local dx,dy=player_ship.x-self.x,player_ship.y-self.y
-    local dist2=dist_trig(dx,dy)
+    local dist2=vdist(player_ship,self.x,self.y)
     if dist2>20 then return false end
 
     if dist2<1 then
@@ -1201,9 +1200,8 @@ function collectible:draw()
     if not self.collected then
         local sx, sy = iso(self.x, self.y)
         local h = terrain_h(self.x, self.y) * block_h
-        local float = sin(time() * 2 + self.x + self.y)
         ovalfill(sx-5, sy-h+3, sx+5, sy-h+5, 1)  -- shadow
-        spr(67, sx - 8, sy - h - 8 + float, 2, 2)
+        spr(67, sx - 8, sy - h - 8 + sin(time()*2+self.x+self.y), 2, 2)
     end
 end
 
@@ -1226,18 +1224,17 @@ mine.__index=mine
 function mine.new(x,y,owner)return setmetatable({x=x,y=y,owner=owner,z=owner and 0 or 60},mine)end
 function mine:update()
     if self.z>0 then
-        self.z-=4
-        if self.z<=0 then self.z=0 end
+        self.z=max(0,self.z-2)
         return true
     end
     if not self.owner then
         particle_sys:explode(self.x,self.y,-terrain_h(self.x,self.y,true)*block_h,1.5)
         sfx(62)
-        if dist_trig(player_ship.x-self.x,player_ship.y-self.y)<2 then player_ship.hp-=15 end
+        if vdist(player_ship,self.x,self.y)<2 then player_ship.hp-=10 ui_react("ouch!",1,8) end
         return false
     end
     for t in all(self.owner==player_ship and enemies or{player_ship})do
-        if dist_trig(t.x-self.x,t.y-self.y)<2 then
+        if vdist(t,self.x,self.y)<2 then
             particle_sys:explode(self.x,self.y,-terrain_h(self.x,self.y,true)*block_h,1.5)
             t.hp-=15 sfx(62)
             return false
@@ -1268,22 +1265,23 @@ function ship.new(start_x, start_y, is_enemy)
         vz = 0,
         hover_height = 1,
         current_altitude = 0,
+        cam_alt = 0,
         angle = 0,
-        accel = 0.05,
-        friction = 0.9,
-        max_speed = is_enemy and 0.32 or 0.4,
-        projectile_speed = 0.4,
-        projectile_life = 40,
+        accel = 0.025,
+        friction = 0.95,
+        max_speed = is_enemy and 0.16 or 0.2,
+        projectile_speed = 0.2,
+        projectile_life = 80,
         fire_rate = is_enemy and 0.15 or 0.1,
         size = 11,
         body_col = is_enemy and 8 or 12,
         outline_col = 7,
         shadow_col = 1,
-        gravity = 0.2,
-        max_climb = 3,
+        gravity = 0.025,
+
         is_hovering = false,
         particle_timer = 0,
-        ramp_boost = 0.2,
+        ramp_boost = 0.1,
         -- combat
         is_enemy = is_enemy,
         max_hp = is_enemy and 50 or 100,
@@ -1374,8 +1372,7 @@ end
 function ship:update_targeting()
     local fx,fy=cos(self.angle),sin(self.angle)
     local best,found=15,nil
-    local list=self.is_enemy and {player_ship} or enemies
-    for t in all(list) do
+    for t in all(self.is_enemy and {player_ship} or enemies) do
         if t~=self then
             local dx,dy=t.x-self.x,t.y-self.y
             local d=dist_trig(dx,dy)
@@ -1394,7 +1391,7 @@ function ship:update()
     if self.is_enemy then
         self:ai_update()
     else
-        tile_manager:update_player_position(self.x,self.y)
+        tm_setpos(self.x,self.y)
 
         -- player input (iso mapping via rx/ry)
         local rx=(btn(➡️) and 1 or 0)-(btn(⬅️) and 1 or 0)
@@ -1427,28 +1424,27 @@ function ship:update()
     local new_terrain=terrain_h(self.x,self.y)
     local height_diff=new_terrain-terrain_h(self.x-self.vx,self.y-self.vy)
     if self.is_hovering and height_diff>0 and speed>0.01 then
-        self.vz=min(height_diff*self.ramp_boost*speed*15, 1.5)  -- cap vertical velocity
+        self.vz=min(height_diff*self.ramp_boost*speed*30, 0.75)  -- cap vertical velocity
         self.is_hovering=false
     end
 
     -- altitude physics
     local target_altitude=new_terrain+self.hover_height
     if self.is_hovering then
-        self.current_altitude=target_altitude self.vz=0
+        self.current_altitude+=(target_altitude-self.current_altitude)*0.3 self.vz=0
     else
         self.current_altitude+=self.vz
         self.vz-=self.gravity
         if self.current_altitude<=target_altitude then
             self.current_altitude=target_altitude self.vz=0 self.is_hovering=true
         end
-        self.vz*=0.98
+        self.vz*=0.995
     end
 
     -- exhaust particles
     if self.is_hovering and speed>0.01 then
         self.particle_timer+=1
-        local spawn_rate=max(1,5-flr(speed*10))
-        if self.particle_timer>=spawn_rate then
+        if self.particle_timer>=max(1,5-flr(speed*10)) then
             self.particle_timer=0
             self:spawn_particles(1+flr(speed*5))
         end
@@ -1460,9 +1456,9 @@ function ship:update()
     self.angle=atan2(self.vx-self.vy,(self.vx+self.vy)*0.5)
 
     -- water rings
-    if self.is_hovering and speed>0.2 then
+    if self.is_hovering and speed>0.1 then
         self.st=(self.st or 0)+1
-        if self.st>4 then add(ws,{x=self.x,y=self.y,r=0,life=28}) self.st=0 end
+        if self.st>8 then add(ws,{x=self.x,y=self.y,r=0,life=56}) self.st=0 end
     end
 end
 
@@ -1482,15 +1478,16 @@ function ship:get_camera_target()
             local d=dist_trig(e.x-fx,e.y-fy)
             if d<best then best=d ne=e end
         end
-        self.cam_blend=(self.cam_blend or 0)+(ne and 0.02 or -0.03)
+        self.cam_blend=(self.cam_blend or 0)+(ne and 0.01 or -0.015)
         self.cam_blend=mid(0,self.cam_blend,0.2)
         if ne and self.cam_blend>0 then 
             fx+=(ne.x-fx)*self.cam_blend 
             fy+=(ne.y-fy)*self.cam_blend 
         end
     end
+    self.cam_alt+=(self.current_altitude-self.cam_alt)*0.08
     local sx=(fx-fy)*half_tile_width
-    local sy=(fx+fy)*half_tile_height - self.current_altitude*block_h
+    local sy=(fx+fy)*half_tile_height - self.cam_alt*block_h
     return 64-sx,64-sy
 end
 
@@ -1510,9 +1507,8 @@ function ship:draw()
     local p3y = sy + sin(back_angle + 0.15) * half_ship_len
 
     -- shadow
-    local terrain_height = terrain_h(self.x, self.y)
-    local shadow_offset = (self.current_altitude - terrain_height) * block_h
-    draw_triangle(fx, fy + shadow_offset, p2x, p2y + shadow_offset, p3x, p3y + shadow_offset, self.shadow_col)
+    local so=(self.current_altitude-terrain_h(self.x,self.y))*block_h
+    draw_triangle(fx,fy+so,p2x,p2y+so,p3x,p3y+so,self.shadow_col)
 
     -- body
     draw_triangle(fx, fy, p2x, p2y, p3x, p3y, self.body_col)
@@ -1524,16 +1520,15 @@ function ship:draw()
 
     -- thrusters
     if self.is_hovering then
-        local c = (sin(time() * 5) > 0) and 10 or 9
+        local c = sin(time()*5)>0 and 10 or 9
         pset(p2x, p2y, c)
         pset(p3x, p3y, c)
     end
 
     -- enemy health bar
     if self.is_enemy then
-        local w = self.hp / self.max_hp * 10
         rectfill(sx - 5, sy - 10, sx + 5, sy - 9, 5)
-        rectfill(sx - 5, sy - 10, sx - 5 + w, sy - 9, 8)
+        rectfill(sx - 5, sy - 10, sx - 5 + self.hp/self.max_hp*10, sy - 9, 8)
     end
 end
 
@@ -1553,13 +1548,14 @@ function update_projectiles()
         local p=projectiles[i]
         p.x+=p.vx p.y+=p.vy p.life-=1
 
-        local targets=p.owner.is_enemy and {player_ship} or enemies
-        for t in all(targets) do
-            local dx,dy=t.x-p.x,t.y-p.y
+        for t in all(p.owner.is_enemy and {player_ship} or enemies) do
+            local dh=(p.z-t.current_altitude)/6
+            local dx,dy=t.x-p.x+dh,t.y-p.y+dh
             if dx*dx+dy*dy<0.5 then
                 t.hp-=3
                 sfx(58)
                 p.life=0
+                if not t.is_enemy then ui_react("ouch!",1,8) end
                 particle_sys:explode(p.x,p.y,-t.current_altitude*block_h,0.8)
                 if t.hp<=0 then
                     sfx(62)
@@ -1581,11 +1577,15 @@ function ui_say(t,d,c)
     ui_msg=t
     ui_vis,ui_col,ui_until,ui_box_target_h= 0,(c or 7),(d and time()+d or 0),26
 end
+function ui_react(t,d,c)
+    ui_shake=8
+    if ui_msg=="" and rnd()<.25 then ui_say(t,d,c) end
+end
 
 
 function ui_tick()
     -- tween box height (only expand for actual messages, not timer)
-    ui_box_h+=(ui_box_target_h-ui_box_h)*0.2
+    ui_box_h+=(ui_box_target_h-ui_box_h)*0.1
     if abs(ui_box_h-ui_box_target_h)<0.5 then ui_box_h=ui_box_target_h end
 
     -- nothing to type yet or box not expanded
@@ -1593,7 +1593,7 @@ function ui_tick()
 
     -- typewriter
     if ui_vis < #ui_msg then
-        ui_vis = min(ui_vis + ((#ui_msg > 15) and 3 or 1), #ui_msg)
+        ui_vis = min(ui_vis + (#ui_msg>15 and 1.5 or 0.5), #ui_msg)
     end
 
     -- timeout ヌ●★ clear & collapse
@@ -1613,9 +1613,8 @@ function combat_event.new()
     local self=setmetatable({completed=false,success=false,start_count=0,last_msg=nil},combat_event)
     ui_say("enemy wave incoming!",3,8)
 
-    local n=min(1+game_manager.difficulty_level,6)
     enemies={}
-    for _=1,n do
+    for _=1,min(1+game_manager.difficulty_level,6) do
         local a,d=rnd(1),10+rnd(5)
         local ex,ey=player_ship.x+cos(a)*d,player_ship.y+sin(a)*d
         local e=ship.new(ex,ey,true) e.hp=50
@@ -1650,8 +1649,7 @@ function combat_event:draw()
         local q=e.hp/e.max_hp
         local dist=dist_trig(player_ship.x-e.x,player_ship.y-e.y)
         local mode=(q<=0.3 and dist>15) or (q>0.3 and (dist>20 or ((time()+e.ai_phase)%6)<3))
-        local col=mode and 8 or 9
-        draw_circle_arrow(e.x,e.y,col)
+        draw_circle_arrow(e.x,e.y,mode and 8 or 9)
     end
     draw_all(enemies)
 end
@@ -1677,52 +1675,41 @@ end
 
 
 
--- TILE MANAGER (optimized: inline generation + precomputed palette)
-tile_manager = {
-    player_x = 0,
-    player_y = 0,
-    palette_cache = nil
-}
+-- TILE MANAGER (flat globals, inline generation + precomputed palette)
+tm_px,tm_py,tm_cm,tm_target=0,0,0,2
 
-function tile_manager:init()
-    self.player_x, self.player_y = 0, 0
-    -- precompute palette lookup table
-    if not self.palette_cache then
-        self.palette_cache={}
+function tm_init()
+    tm_px,tm_py,tm_cm=0,0,0
+    if not tm_pal then
+        tm_pal={}
         for i=1,8 do
             local p=(i-1)*3+1
-            self.palette_cache[i]={ord(TERRAIN_PAL_STR,p),ord(TERRAIN_PAL_STR,p+1),ord(TERRAIN_PAL_STR,p+2)}
+            tm_pal[i]={ord(TERRAIN_PAL_STR,p),ord(TERRAIN_PAL_STR,p+1),ord(TERRAIN_PAL_STR,p+2)}
         end
     end
 end
 
-function tile_manager:update_player_position(px, py)
-    self.player_x, self.player_y = flr(px), flr(py)
+function tm_setpos(px,py)
+    tm_px,tm_py=flr(px),flr(py)
 end
 
--- CACHE MANAGEMENT: inline terrain generation with string keys (safe, fast)
-function tile_manager:manage_cache()
-    local px,py=self.player_x,self.player_y
-    -- expand margin for minimap mode (needs るね28 tiles)
-    local margin=self.minimap_mode and view_range*4 or view_range*2
-    local pxm,pym=px-margin,py-margin
-    local pxp,pyp=px+margin,py+margin
+function tm_cache()
+    local px,py=tm_px,tm_py
+    local cm=min(tm_cm,tm_target)
+    local pxm,pym=px-cm,py-cm
+    local pxp,pyp=px+cm,py+cm
     local cache=cell_cache
     local perm=terrain_perm
     local thresh=TERRAIN_THRESH
-    local palcache=self.palette_cache
+    local palcache=tm_pal
     local scale=menu_options[1].values[menu_options[1].current]
     local water_level=menu_options[2].values[menu_options[2].current]
-    local added,removed=0,0
 
-    -- Phase 1: Fill missing tiles (inline generation, budget=50)
     for x=pxm,pxp do
-        if added>=50 then break end
+        local row=cache[x]
+        if not row then row={} cache[x]=row end
         for y=pym,pyp do
-            if added>=50 then break end
-            local key=x..","..y
-            if not cache[key] then
-                -- inline terrain generation
+            if not row[y] then
                 local nx,ny=x/scale,y/scale
                 local cont=perlin2d(nx*.03,ny*.03,perm)*15
                 local hdetail=(perlin2d(nx,ny,perm)+perlin2d(nx*2,ny*2,perm)*.5+perlin2d(nx*4,ny*4,perm)*.25)*(15/1.75)
@@ -1732,22 +1719,19 @@ function tile_manager:manage_cache()
                 local i=1
                 while h>thresh[i] do i+=1 end
                 local pc=palcache[i]
-                cache[key]={pc[1],pc[2],pc[3],h}
-                added+=1
+                row[y]={pc[1],pc[2],pc[3],h}
             end
         end
     end
 
-    -- Phase 2: Remove tiles outside range
-    for k in pairs(cache) do
-        if removed>=10 then break end
-        local p=split(k,",",true)
-        local x,y=p[1],p[2]
-        if x<pxm or x>pxp or y<pym or y>pyp then
-            cache[k]=nil
-            removed+=1
+    for x in pairs(cache) do
+        if x<pxm or x>pxp then
+            cache[x]=nil
         end
     end
+
+    if cm<tm_target then cm+=1 end
+    tm_cm=cm
 end
 
 
@@ -1848,134 +1832,134 @@ eeeeeeee00000000eeeeeeee00000000eeeeeeee0000000000000000000000000000000000000000
 eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 __label__
-111111111111111fffffffffffffffffffffffff1212ccccccccccccccccccccccc1111111111111111111111111111111111111111111111111111111111111
-1111111111111fffffffffffffffffffffffff22222cccccccccccccccccccccc111111111111111111111111111111111111111111111111111111111111111
-11111111111fffffffffffffffffffffffff22222cccccccccccccccccccccc11111111111111111111111111111111111111111111111111111111111111111
-111111111fffffffffffffffffffffffff22222cccccccccccccccccccccc1111111111111111111111111111111111111111111111111111111111111111111
-1111111fffffffffffffffffffffffff22222cccccccccccccccccccccc111111111111111111111111111111111111111111111111111111111111111111111
-11111fffffffffffffffffffffffff22222ccc111111111111111111111111ccccccccccccccccccc11111ccccccccccccccccccc11111cccccccccccccccccc
-111fffffffffffffffffffffffff22222cccccccccccccccccccccc1111111111111111111111111111111111111111111111111111111111111111111111111
-ffffffffffffffffffffffffff22222cccccccccccccccccccccc111111111111111111111111111111111111111111111111111111111111111111111111111
-ffffffffffffffffffffffff22222cccccccccccccccccccccc11111111111111111111111111111111111111111111111111111111111111111111111111111
-ffffffffffffffffffffffffff211111111111111111111ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
-ffffffffffffffffffffffffffff0000000000000000000000000000000000000000000000001111000111111111111111111111111111111111111111111111
-ffffffffffffffffffff000fffff0c0ccccccccc0ccccccccc0c0ccccccccc0ccccccccc0cc001110c0111111111111111111111111111111111111111111111
-ffffffffffffffffffff0c0ff0000c0c0000000c0c0000000c0c000000cc000c0000000c0c0cc0110c0111111111111111111111111111111111111111111111
-ffffffffffffffffffff0c000ccccc0c0fcccc0c0ccccccccc0c01000c00110c0111110c0c000c000c0111111111111111111111111111111111111111111111
-ffffffffffffffffffff0cccc0000c0c0000000c0c0000cc000c000cc000000c0000000c0c0110cc0c0111111111111111111111111111111111111111111111
-ffffffffffffffffffff0c000fff0c0ccccccccc0c011000cc0c0ccccccccc0ccccccccc0c011100cc0111111111111111111111111111111111111111111111
-ffffffffffffffffffff0c0fffff000000000000000cccc0000000000000000000000000000ccccc0001ccccccccccccccccccccccc1cccccccccccccccccccc
-ffffffffffffffffffff000fffffffffffffffffff11111111111111111111111111111111111111111111111111111111111111111111111111111111111111
-ffffffffffffffffffffffffffffffffffffffffffff111111111111111111111111000000001111111111111111111111111111111111111111111111111111
-ffffffffffffffffffffff22ffffffffffffffffffffff11111111111111111111110ccccccc0001111111111111111111111111111111111111111111111111
-ffffffffffffffffffff222fffffffffffffffffffffffff111111111111111111110c000000cc00011111111000000000001000000000011111111111111111
-ffffffffffffffffff222fffffffffffffffffffffffff22cccccccccccccccccccc0c00cccc000c0ccccccc0c0cccccccc00ccccccccc0ccccccccccccccccc
-ffffffffffffffff222fffffffffffffffffffffffff2222111111111111111111110c000000cc0c011111110c0c0000000c0c00000000011111111111111111
-ffffffffffffff222fffffffffffffffffffffffff22222ccc1111111111111111110ccccccc0c0c011111110c0c0ccccc0c0cccccccc0111111111111111111
-ffffffffffff222fffffffffffffffffffffffff22222ccccccc111111111111111100000000cc0c001111110c0c0000000c0c00000000011111111111111111
-ffffffffff222fffffffffffffffffffffffff22222ccccccccccc1111111111111111111111000ccc0000000c0cccccccc00ccccccccc011111111111111111
-ffffffff222fffffffffffffffffffffffff22222ccccccccccccccc11111111111111111111111000cccccc000000000000c000000000011111111111111111
-ffffff222fffffffffffffffffffffffff22222ccccccccccccccccccc1111111111111111111111110000000ccccccccccccccccc1111111111111111111111
-ffff222fffffffffffffffffffffffff22222cccccccccccccccccccccc111111111111111111111111ccccccccccccccccccccccccc11111111111111111111
-ff222fffffffffffffffffffffffff22222ccc111111111111111111111111cccccccccccccccccccccccc1111111111111111111ccccccccccccccccccccccc
-222fffffffffffffffffffffffff22222cccccccccccccccccccccc111111111111111111111111ccccccccccccccccccccccccccccccccc111111111111111c
-2fffffffffffffffffffffffff22222cccccccccccccccccccccc111111111111111111111111ccccccccccccccccccccccccccccccccccccc11111111111ccc
-ffffffffffffffffffffffff22222cccccccccccccccccccccc111111111111111111111111ccccccccccccccccccccccccccccccccccccccccc1111111ccccc
-4fffffffffffffffffffff22222cccccccccccccccccccccc111111111111111111111111ccccccccccccccccccccccccccccccccccccccccccccc111ccccccc
-444fffffffffffffffff22222cccccccccccccccccccccc111111111111111111111111ccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
-44444fffffffffffff22222111111111111111111111111111cccccccccccccccccccccccc1111111111111111111ccccc1111111111111111111ccccc111111
-cc44444fffffffff222221111111ccccccccccccccc111111111111111111111111ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
-cccc44444fffff2222211111111111ccccccccccc111111111111111111111111ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
-cccccc44444f22222111111111111111ccccccc111111111111111111111111ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
-cccccccc44422221111111111111111111ccc111111111111111111111111ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
-cccccccccc4221111111111111111111111111111111111111111111111ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccf
-ccccccccc111111111111111111111111111111111111111111111111ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccfff
-1111111111111111ccccccccccccccc111111111cccccccccccccccccccccccc111111111111111ccccccccc111111111111111ccccccccc1111111f111fffff
-ccccc111111111111111111111111111111111111111111111111ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccfffffffffff
-ccc111111111111111111111111111111111111111111111111ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccfffffffffffff
-c111111111111111111111111111111111111111111111111ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccfffffffffffffff
-ccccccccccccccccccccccc1ccccccccccccccccccccccc111111111111111111111111c11111111111111111111111c111111111111111fffffffffffffffff
-11111111111111111111111111111111111111111111111111cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccfffffffffffffffffff
-1111111111111111111111111111111111111111111111111111cccccccccccccccccccccccccccccccccccccccccccccccccccccccffffffffffffffffffff3
-111111111111111111111111111111111111111111111111111111ccccccccccccccccccccccccccccccccccccccccccccccccccccc44ffffffffffffffff333
-11111111111111111111111111111111111111111111111111111111cccccccccccccccccccccccccccccccccccccccccccccccccccf444ffffffffffff33333
-1111111111111111111111111111111111111111111111111111111111cccccccccccccccccccccccccccccccccccccccccccccccfffff444ffffffff3333333
-11111111111111111111111111111111111111111111111111111111111ccccccccccccccccccccccccccccccccccccccccccccfffffffff444ffff333333333
-ccccccccc11111ccccccccccccccccccc11111cccccccccccccccccccccccc1111111111111111111ccccc111111111111111fffffffffffff44433333333333
-1111111111111111111111111111111111111111111111111111111ccccccccccccccccccccccccccccccccccccccccccccffffffffffffffff3333333333333
-11111111111111111111111111111111111111111111111111111ccccccccccccccccccccccccccccccccccccccccccccffffffffffffffff333333333333333
-111111111111111111111111111111111111111111111111111ccccccccccccccccccccccccccccccccccccccccccccffffffffffffffff33333333333333333
-ccccccccccccccccccccccccccccccccccccccccccccccc11111111111111111111111111111111111111111111111144ffffffffffff3333333333333333333
-11111111111111111111111111111111111111111111111cccccccccccccccccccccccccccccccccccccccccccccccc4444ffffffff333333333333333333333
-111111111111111111111111111111111111111111111ccccccccccccccccccccccccccccccccccccccccccccccccccc44444ffff33333333333333333333333
-1111111111111111111111111111111111111111111ccccccccccccccccccccccccccccccccccccccccccccccccccccccc444443333333333333333333333333
-11111111111111111111111111111111111111111ccccccccccccccca7777777cccccccccccccccccccccccccccccccccccc4333333333333333333333333333
-111111111111111111111111111111111111111cccccccccccccccccc7cccccc77777777ccccccccccccccccccccccccccc3333333333333333333333333333b
-1111111111111111111111111111111111111ccccccccccccccccccc1f7cccccccccc77cccccccccccccccccccccccccc3333333333333333333333333333bbb
-ccccccccccc1cccccccccccccccccccccccc1111111111111111111ff117cccccccc711111111111111c111111111113333333333333333333333333333bbbbb
-111111111111111111111111111111111ccccccccccccccccccccfffff17cccccc77111cccccccccccccccccccccc3333333333333333333333333333bbbbbbb
-1111111111111111111111111111111ccccccccccccccccccc0ffffffff17cccc7111ccfccccccccccccccccccc3333333333333333333333333333bbbbbbbbb
-11111111111111111111111111111cccccccccccccccccccc000fffff0ff17c77111ffffffccccccccccccccc33333333333333333333333333333333bbbbbbb
-111111111111111111111111111ccccccccccccccccccccfff0ffffffffff1a111ffffffffffccccccccccc33333333333333333333333333333333b333bbbbb
-ccccccccccccccccccccccc1111111111111111111111ff0ffffffffffffff111fffffffffffff111111133333333333333333333333333333333bbbbb333bbb
-111111111111111111111111cccccccccccccccccccfffffffffffffffffffffffffffffffffffffccc33333333333333333333333333333333bbbbbbbbb333b
-11111111111111111111111111cccccccccccccccffffffffffffffffffffffffffffffffffffffff33333333333333113333333333333333bbbbbbbbbbbbb33
-1111111111111111111111111111cccccccccccffffffffffffffffffffffffffffffffffffffff33333333333333331111333333333333bbbbbbbbbbbbbbbbb
-111111111111111111111111111111cccccccff0fffffffffffffffffffffffffffffffffffff33333333333333333311111133333333bbbbbbbbbbbbbbbbbbb
-11111111111111111111111111111111cccffffffffffffffffffffffffffffffffffff3fff33333333333333333333311111113333bbbbbbbbbbbbbbbbbbbbb
-1111111111111111111111111111111111c44ffffffffffffffffffffffffffffffff3333333333333333333333333333311111113333bbbbbbbbbbbbbbbbbbb
-111111111111111111111111111111111114444ffffffffffffffffffffffffffff33333333333333333333333333333333311111113333bbbbbbbbbbbbbbbbb
-ccccccccc11111cccccccccccccccccccccc44444ffffffffffffffffffffffff333333333333333333333333333333333333311111333333bbbbbbbbbbbbb11
-1111111111111111111111111111111ccccccc44444ffffffffffffffff3fff3333333333333333333333333333333333333333311133333333bbbbbbbbb1113
-11111111111111111111111111111ccccccccccc44444ffffffffffff333333333333333333333333333333333333333333333333333333333333bbbbb111333
-111111111111111111111111111ccccccccccccccc4ffffffffffff3333333333333333333333333333333333333333333333333333333333333333b11133333
-1111111111111111111111111ccccccccccccccccffffffffffff333333333333333333333333333333333333333333333333333333333333333333113333333
-11111111111111111111111ccccccccccccccccffffffffffff33333333333333333333333333333333333333333333333333333333333333333333333333333
-11cccccccccccccccccccccccc11111111111ffffffffffff3333333333333333333333333333333333333333333333333333333333333333333333113333333
-1111111111111111111ccccccccccccccccffffffffffff333333333333333333333333333333333333333333333333333333333333333333333333311133333
-11111111111111111ccccccccccccccccffffffffffffff113333333333333333333330033333333333333333333333113333333333333333333333333111333
-111111111111111ccccccccccccccccffffffffffffffff111133333333333333333000333333333333333333333333111133333333333333333333333331113
-1111111111111ccccccccccccccccffffffffffffffffff111111333333333333300033333333333333333333333330111111333333333333333333333333311
-11111111111ccccccccccccccccffffffffffffffffffbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb3333333333000311111113333333333333333333333333
-111111111ccccccccccccccccffffffffffffffffffffb00000000000000000000000000000000000b3333333300033333111111133333333333333333333333
-cccccccccccccccc1111111ffffffffffffffffffff33b00000000000000000000000000000000000b3333330003333333331111111333333333333333333333
-11111ccccccccccccccccffffffffffffffffffff3333b00000000000000000000000000000000000b3333000333333333333311111113333333333333333333
-111ccccccccccccccccffffffffffffffffffff333333b0000000000bbb0b000bbb0b0b0000000000b3300033333333333333333111111133333333333333333
-1ccccccccccccccccffffffffffffffffffff33333333b0000000000b0b0b000b0b0b0b0000000000b0003333333333333333333331111111333333333333300
-111111111111111ffffffffffffffffffff3333333333b0000000000bbb0b000bbb0bbb0000000000b0333333333333333333333333311111113333333330000
-cccccccccccccffffffffffffffffffffff1133333333b0000000000b000b000b0b000b0000000000b0113333333333333333333333333111111133333000000
-cccccccccccfffffffffffffffffffffffff111333333b0000000000b000bbb0b0b0bbb0000000000b0f11133333333333333333333333331111111300000003
-ccccccccccc44fffffffffffffffffffffffff1113333b00000000000000000000000000000000000bffff111333333333333333333333333311111000000333
-cccccccccccf444fffffffffffffffffffffffff11133b00000000000000000000000000000000000bffffff1113333333333333333333333333111000033333
-cccccccccfffff444fffffffffffffffffffffffff111b00000000000000000000000000000000000bffffffff11133333333333333333333333331003333333
-cccccccfffffffff444fffffffffffffffffffffffff1bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbffffffffff111333333333333333333333333333333333
-11111fffffffffffff444fffffffffffffffffffffffff111333333333333333333333000fffffffffffffffffffff1113333333333333333333330113333333
-cccfffffffffffffffff444ffffffffffffffffffffffff111133333333333333333000fffffffffffffffffffffffff11133333333333333333000f11133333
-ffffffffffffffffffffff444ffffffffffffffccccccccccccccccccccccccccccccccccccccccccccccccccfffffffff1113333333333333000fffff111333
-ffffffffffffffffffffffff444ffffffffffffc000000000000000000000000000000000000000000000000cfffffffffff111333333333000fffffffff1113
-ffffffffffffffffffffffffff444ffffffffffc000000000000000000000000000000000000000000000000cfffffffffffff11133333000fffffffffffff11
-ffffffffffffffffffffffffffff444ffffffffc000000077070700770777007707770777077707770000000cfffffffffffffff1113000fffffffffffffffff
-ffffffffffffffffffffffffffffff444fffff2c000000700070707000070070707770070000707000000000cfffffffffffffffff100fffffffffffffffffff
-ffffffffffffffffffffffffffffffff444f222c000000700070707770070070707070070007007700000000cfffffffffffffffffffffffffffffffffffffff
-fffffffffffffffffffffffffffffffffffffffc000000700070700070070070707070070070007000000000cfffffffffffffffff244fffffffffffffffffff
-fffffffffffffffffffffffffffffffffffffffc000000077007707700070077007070777077707770000000cfffffffffffffff222f444fffffffffffffffff
-fffffffffffffffffffffffffffffffffffffffc000000000000000000000000000000000000000000000000cfffffffffffff222fffff444fffffffffffff22
-fffffffffffffffffffffffffffffffffffffffc000000000000000000000000000000000000000000000000cfffffffffff222fffffffff444fffffffff2222
-fffffffffffffffffffffffffffffffffffffffc000000000000000000000000000000000000000000000000cfffffffff222fffffffffffff444fffff222222
-fffffffffffffffffffffffffffffffffffffffccccccccccccccccccccccccccccccccccccccccccccccccccfffffff222fffffffffffffffff444f22222222
-1ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff44fffffffffffffffffffff222fffffffffffffffffffff422222222c
-111fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff444fffffffffffffffff222fffffffffffffffffffffffff22222ccc
-11111fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff444fffffffffffff222fffffffffffffffffffffffff2222211111
-1111111fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff444fffffffff222fffffffffffffffffffffffff22222ccccccc
-111111111fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff444fffff222fffffffffffffffffffffffff22222ccccccccc
-11111111111fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff444f222fffffffffffffffffffffffff22222ccccccccccc
-1111111111111fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff422fffffffffffffffffffffffff22222ccccccccccccc
-111111111111111fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff22222ccccccccccccccc
-11111111111111111fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff2ccccccccccccccccc
-1111111111111111111fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffcccccccccccccccc
-111111111111111111111fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff11111111111111
-11111111111111111111111fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffcccccccccccc
-1111111111111111111111111fffffffffffffffffffff244fffffffffffffffffffff22ffffffffffffffffffffffffffffffffffffffffffffffcccccccc11
+11f111ccccccccccccccccfffffffffffffffffffffffffffffffff111333333333101fffffffffffffffffffffffff121f1212ccccccccccccccccccccccc11
+fffffcccccccccccccccfffffffffffffffffffffffffffffffffffff11133333000fffffffffffffffffffffffff222fffff2cccccccccccccccccccccc1111
+fffffffccccccc3cccffffffffffffffffffff3ffffffffffffffffffff1113000fffffffffffffffffffffffff222fffffffffcccccccccccccccccccc11111
+fffffffff11133333fffffffffffffffffff33333ffffffffffffffffffff100fffffffffffffffffffffffff222fffffffffffff111111111111111cccccccc
+ff3fffffff333333333fffffffffffffff333333333ffffffffffffffffffffffffffffffffffffffffffff222fffffffffffffffffcccccccccccccccccccc1
+33333fff3333333333333fffffffffff3333333333333ffffffffffffffff244fffffffffffffffffffff222fffffffffffffffffffffccccccccccccccccccc
+33333333333333333333333fff3fff33333333333333333ffffffffffff222f444fffffffffffffffff222fffffffffffffffffffffffffccccccccccccccccc
+3333333333333333333333333333333333333333333333333ffffffff222fffff444fffffffffffff222fffffffffffffffffffffffff2211111111111111111
+333333333333333333333333333333333333333333333333333ffff222fffffffff444fffffffff222fffffffffffffffffffffffff2222ccccccccccccccccc
+333333333333333333333333333333333333333333333333300ff222fffffffffffff444fffff222fffffffffffffffffffffffff22222cccccccccccccccccc
+333333333333333333333003333300000000000000000000000000000000000000000000000022ff000ffffffffffffffffffff22222cccccccccccccccccccc
+333333333333333333330c0333330c0ccccccccc0ccccccccc0c0ccccccccc0ccccccccc0cc00fff0c0ffffffffffffffffff22222cccccccccccccccccccccc
+33b333333333333333330c0000000c0c0000000c0c0000000c0c000000cc000c0000000c0c0cc0ff0c0ffffffffffffffff22222cccccccccccccccccccccccc
+bbbbb3333333333333330ccccccccc0c0333300c0ccccccccc0c0f000c00ff0c0fffff0c0c000c000c0ffffffffffffff22222cccccccccccccccccccccccccc
+bbbbbbb33333333333330c0000000c0c0000000c0c0000cc000c000cc000000c0000000c0c0440cc0c0ffffffffffff222221111111111111111111111c11111
+bbbbbbbbb333333333330c0330030c0ccccccccc0c0ff000cc0c0ccccccccc0ccccccccc0c044400cc0ffffffffff22222cccccccccccccccccccccccccccccc
+bbbbbbbbbbb33333333300000003000000000000000ffff0000000000000000000000000000cc444000ffffffff22222cccccccccccccccccccccccccccccccc
+bbbbbbbbbbbbb33333330000000330003333333333333ffffffffffffffff22ff22222ccccccccc44444fffff22222cccccccccccccccccccccccccccccccccc
+bbbbbbbbbbbbbbb33330000000300033333333333333333ffffffffffff222f22222ccccccccccccc44444f22222cccccccccccccccccccccccccccccccccccc
+bbbbbbbbbbbbb113300000003333333333333333333333333ffffffff222fffff2ccccccccccccccccc4442222cccccccccccccccccccccccccccccccccccccc
+bbbbbbbbbbb1113000000033333333333333333333333333333ffff222fffffffff1000000000000011114220000000000001000000001c11111111111111111
+bbbbbbbbb111333330003333333333333333333333333333300ff222ffffffffffff0ccccccccc0c0ccccccc0c0cccccccc00cccccccc00ccccccccccccccccc
+bbbbbbb1113333333333333333333333333333333333333000f222ffffffffffffff0c000000000c0ccccccc0c0c0000000c0c0000000c0ccccccccccccccccc
+b11bb1113333333333333333333333333333333333333000ffffffffffffffffffff0c00cccccc0c0ccccccc0c0c0ccccc0c0cccccccc00ccccccccccccccccc
+11b1113333333333333333333333333333333333333000ffffffffffffffffffffff0c0000000c0c000000000c0c0000000c0c00000000cccccccccccccccccc
+bbbbb333333333333333333333333333333330033000ffffffffffffffffffffffff0ccccccccc0ccccccccc0c0cccccccc00cccccccc00ccccccccccccccccc
+bbbbbbb33333333333333333333333333330003000ffffffffffffffffffffffffff00000000000000000000000000000000c00000000c0ccccccccccccccccc
+bbbbbbbbb33333333333333330033333300033333ffffffffffffffffffffffffffff22222ccc1111111111111111111ccccc1111111100111111111ccccc111
+bbbbbbbbbbb33333333333300003333000333333333ffffffffffffffffffffffff22222cccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+bbbbbbbbbbbbb33333333000000330003333333333333ffffffffffffffff22ff22222cccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+bbbbbbbbbbbbbbb33330000000300033333333333333333ffffffffffff222f22222cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+bbbbbbbbbbbbb113300000003333333333333333333333333ffffffff222fffff2cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+bbbbbbbbbbb1113000000033333333333333333333333333333ffff222fffffffffccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+bbbbbbbbb111333330003333333333333333333333333333300ff222fffffffffffff111111111111111ccccc1111111111111111111ccccc111111111111111
+bbbbbbb1113333333333333333333333333333333333333000f222fffffffffffffffffccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+bbbbb1113333333333333333333333333333333333333000fffffffffffffffffffffffffccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+bbb1113333333333333333333333333333333333333000fffffffffffffffffffffffffffffccccccccccccccccccccccccccccccccccccccccccccccccccccc
+b1113333333333333333333333333333333333333000fffffffffffffffffffffffffffffffffccccccccccccccccccccccccccccccccccccccccccccccccccc
+1133333333333333333333333333333333333333333fffffffffffffffffff3ffffffffffffffffccccccccccccccccccccccccccccccccccccccccccccccccc
+333333333333333333333333300333333333333333333fffffffffffffff33333ffffffffffffffffccccccccccccccccccccccccccccccccccccccccccccccc
+33333333333333333333333000333333333333333333333fffffffffff333333333ffffffffffffffff111f1111111ccccccccc1111111f1111111ccccccccc1
+3333333333333333333330003333333333333333333333333fffffff3333333333333ffffffffffffffffffffcccccccccccccccccccfffffccccccccccccccc
+333333333333333333300033333333333333333333333333333fff33333333333333333ffffffffffffffffffffcccccccccccccccfffffffffccccccc3ccccc
+3333333333333333300033333333333333333333333333333333333333333333333333333ffffffffffffffffffffcccccccccccfffffffffffffccc33333ccc
+333333333333333000333333333333333333333333333333333333333333333333333333333ffffffffffffffffffffccc3cccffffffffffffffff333333333f
+33333333333333333333333333333333333333333333333333333333333333333333333333333fffffffffffffffffff33333fffffffffffffff333333333333
+3333333333333333333333333333333333333333333333333333333333333333333333333333333fffffffffffffff333333333fffffffffff33333333333333
+b33333333333333333333333333333333333333333333333333333333333333333333333333333333fffffffffff3333333333333fffffff3333333333333333
+bbb33333333333333333333333b33333333333333333333333333333333333333333333333333333333fffffff33333333333333333fff333333333333333333
+bbbbb3333333333333333333bbbbb33333333333333333333333333333333333333333333333333333333fff3333333333333333333333333333333333333333
+bbbbbbb333333333333333bbbbbbbbb3333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333
+bbbbbbbbb33333333333bbbbbbbbbbbbb33333333333333333333333333333333333333333333333333330113333333333333333333333333333333333333333
+bbbbbbbbbbb333b333bbbbbbbbbbbbbbbbb333333333333333333333333333333333333333333333333000f11133333333333333333333333333333333333330
+bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb33333333333333333333333333333333333333333333000fffff111333333333333333333333333333333333000
+bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb3333333333333333333333333333333333333333000fffffffff1113333333333333333333333333333300033
+bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb1133333333333333333333333333333333330033000fffffffffffff11133113333333333333333333330003333
+bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb1113333333333333333333333333333333330003000fffffffffffffffff111111133333333333333333000333333
+bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb11133333333333333333333333330033333300033333ffffffffffffffffffff1111111333333333333300033333333
+bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb111333333333333333333333333300003333000333333333ffffffffffffffffffff11111113333333330003333333333
+bbbbbbbbbbbbbbbbbbbbbbbbbbbbb1113333333333333333333333333000000330003333333333333ffffffffffffffffffff111111133333000333333333333
+bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb3333333333333333333333330000000300033333333333333333ffffffffffffffffffff1111111300033333333333333
+bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb3333333333333333333300000003333333333333333333333333ffffffffffffffffffff11111003333333333333333
+bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb3333333333333333000000033333333333333333333333333333ffffffffffffffffffff111333333333333333333
+bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb33333333333300000009777777777777777333333333333300ffffffffffffffffffffff1113333333333333333
+bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb3333333300000003337cccccccccccc7333333333333000fffffffffffffffffffffffff11133333333333333
+bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb1133333300000003333117ccccccccc77113333333330000044fffffffffffffffffffffffff111333333333333
+bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb1111333300000003330333117ccccccc7111333333330000000f444fffffffffffffffffffffffff1113333333330
+bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb111111330000000333300033317cccccc711333300330000000fffff444fffffffffffffffffffffffff11133333000
+bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb111111130000000333333303333317ccc771133300000000000fffffffff444fffffffffffffffffffffffff1113000ff
+bb33bbbbbbbbbbbbbbbbbbbbb11bb111111133333000333333333333333317c71133300000000000fffffffffffff444fffffffffffffffffffffffff100ffff
+bbb333bbbbbbbbbbbbbbbbb111b111111133333333333333333333333333319113300000000000fffffffffffffffff444ffffffffffffffffffffffffffffff
+bbbbb333bbbbbbbbbbbbb111bbbbb11133333333333333303333333333333311300000000000fffffffffffffffffffff444fffffffffffffffffffff244ffff
+bbbbbbb333bbbbbbbbb111bbbbbbbbb3333333333333333333333333333333300000000000ffffffffffffffffffffffff4444fffffffffffffffff222f444ff
+bbbbbbbbb333bbbbb111bbbbbbbbbbbbb333333333333333333333333333300000000000fffffffffffffffffffffffff2444444fffffffffffff222fffff444
+bbbbbbbbbbb333b111bbbbbbbbbbbbbbbbb33333333333333333333333300000000000fffffffffffffffffffffffff22244444444fffffffff222fffffffff4
+bbbbbbbbbbbbb311bbbbbbbbbbbbbbbbbbbbb3333333333330033333300000000000fffffffffffffffffffffffff22222c444444444fffff222ffffffffffff
+bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb333333330000333300000000000fffffffffffffffffffffffff22222ccccc444444444f222ffffffffffffff
+bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb113333330000003300000000000fffffffffffffffffffffffff22222ccccccccc444444422ffffffffffffffff
+bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb111b33330000000300000000000fffffffffffffffffffffffff22222ccccccccccccc44444ffffffffffffffffff
+bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb111bbbbb0000000333330000000fffffffffffffffffffffffff22222ccccccccccccccccc44444ffffffffffffffff
+bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb111bbbbbbbbb000333333333000fffffffffffffffffffffffff22222ccccccccccccccccccccc44444ffffffffffffff
+bbbbbbbbbbbbbbbbbbbbbbbbbbbbb111bbbbbbbbbbbbb333333333333ffffffffffffffffffffffff22222ccc1111111111111111111ccc44444ffffffffffff
+33bbbbbbbbbbbbbbbbbbbbbbbbb111bbbbbbbbbbbbbbbbb333333333333ffffffffffffffffffff22222ccccccccccccccccccccccccccccc44444fffffffff2
+b333bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb333333333333ffffffffffffffff22222ccccccccccccccccccccccccccccccccc44444fffff222
+bbb333bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb333333333333ffffffffffff22222ccccccccccccccccccccccccccccccccccccc44444f22222
+bbbbb333bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb11333333333300ffffffffff22222ccccccccccccccccccccccccccccccccccccccccc4442222cc
+bbbbbbb333bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb1111333333330000ffffffff22222ccccccccccccccccccccccccccccccccccccccccccccc422cccc
+bbbbbbbbb333bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb111111333333000000ffffff22222cccccccccccccccccccccccccccccccccccccccccccccccccccccc
+bbbbbbbbbbb333bbbbbbbbbbbbbbbbbbbbbbbbbbbbb1111111133330000000fffff22222ccccccc111111111111111ccccccccc111111111111111ccccccccc1
+bbbbbbbbbbbbb333bbbbbbbbbbbbbbbbbbbbb11bb111111bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbccccccccccccccccccccccccccccccccccccccccccccccccc
+bbbbbbbbbbbbbbb333bbbbbbbbbbbbbbbbb11111111111bb000000000000000000000000000000bbcccccccccccccccccccccccccccccccccccccccccccccccc
+bbbbbbbbbbbbbbbbb333bbbbbbbbbbbbb111111111111bb00000000000000000000000000000000bbccccccccccccccccccccccccccccccccccccccccccccccc
+bbbbbbbbbbbbbbbbbbb333bbbbbbbbb11111111111111b000000000bbb0b000bbb0b0b0000000000bccccccccccccccccccccccccccccccccccccccccccccccc
+bbbbbbbbbbbbbbbbbbbbb333bbbbb1111111111111113b000000000b0b0b000b0b0b0b0000000000b111ccccc1111111111111111111ccccc111111111111111
+bbbbbbbbbbbbbbbbbbbbbbb333b111111111113111333b000000000bbb0b000bbb0bbb0000000000bccccccccccccccccccccccccccccccccccccccccccccccc
+bbbbbbbbbbbbbbbbbbbbbbbbb31111111111333333333b0000000003000300030300030000000000bccccccccccccccccccccccccccccccccccccccccccccccc
+33bbbbbbbbbbbbbbbbbbbbbbbbb111111133333333333b0000000003000333030303330000000000bccccccccccccccccccccccccccccccccccccccccccccc11
+3333bbbbbbbbbbbbbbbbbbbbb11111113333333333333bb00000000000000000000000000000000bbccccccccccccccccccccccccccccccccccccccccccc1111
+333333bbbbbbbbbbbbbbbbb11111113333333333333333bb000000000000000000000000000000bbcccccccccccccccccc1ccccccccccccccccccccccc111111
+33333333bbbbbbbbbbbbb11111113333333333333333333bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb1111111111111111111111111111111111111111111111ccc
+3333333333bbbbbbbbb11111113333333333333333333333333333300000000222222222cccccccccccccccccccccc111111111ccccccccccccccc1111111111
+333333333333bbbbb11111113333333333333333333333333003300000000002222222cccccccccccccccccccccc1111111111111ccccccccccc111111111111
+33333333333333b11111113333333333333333333333333000000000000000022222cccccccccccccccccccccc11111111111111111ccccccc11111111111111
+33333333333333111111333333333333333333333ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+3333333333333331113333333333333333333333cc00000000000000000000000000000000000000000000cc1111111111111111111111111111111111111111
+333333333333300133333333333333333333333cc0000000000000000000000000000000000000000000000cc111111111111111111111111111111111111111
+333333333330003333333333333333333333333c000000077070700770777007707770777077707770000000c111111111111111111111111111111111111111
+333333333000001133333333333333333333300c000000700070707000070070707770070000707000000000c111111111111111111111111111111111111111
+333333300000003111333333333333333330000c000000700070707770070070707070070007007700000000c111111111111111111111111111111111111111
+333330000000333331113333333333333000000c000000600060600060060060606060060060006000000000c111111111111111111111111111111111111111
+113000000033333333311133333333300000000c000000066006606600060066006060666066606660000000cccccccccc1ccccccccccccccccccccccc1ccccc
+310000003333333333333111333330000000000cc0000000000000000000000000000000000000000000000cc111111111111111111111111111111111111111
+3330003333333333333333311130000000000000cc00000000000000000000000000000000000000000000cc1111111111111111111111111111111111111111
+3000333333333333333333333100000000000000fcccccccccccccccccccccccccccccccccccccccccccccc11111111111111111111111111111111111111111
+00333333333333333333333333300000000000fffffffffffffffffffffffffccc11111111111111111111111111111111111111111111111111111111111111
+001133333333333333333333300000000000fffffffffffffffffffffffff22c1111111111111111111111111111111111111111111111111111111111111111
+0031113333333333333333300000000000fffffffffffffffffffffffff2222ccccccccccccccccccccccc1ccccccccccccccccccccccc1ccccccccccccccccc
+33333111333333333333300000000000fffffffffffffffffffffffff22222111111111111111111111111111111111111111111111111111111111111111111
+333333311133333333300000000000fffffffffffffffffffffffff2222211111111111111111111111111111111111111111111111111111111111111111111
+3333333331113333300000000000fffffffffffffffffffffffff222221111111111111111111111111111111111111111111111111111111111111111111111
+33333333333111300000000000fffffffffffffffffffffffff22222111111111111111111111111111111111111111111111111111111111111111111111111
+3333333333333100000000000044fffffffffffffffffffff2222211111111111111111111111111111111111111111111111111111111111111111111111111
+333333333333333000000000004444fffffffffffffffff222221111111111111111111111111111111111111111111111111111111111111111111111111111
+33333333333330000000000000c44444fffffffffffff22222111ccccccccccccccccccc11111ccccccccccccccccccc11111ccccccccccccccccccc11111ccc
+333333333330000000000000ccccc44444fffffffff2222211111111111111111111111111111111111111111111111111111111111111111111111111111111
+3333333330000000000000ccccccccc44444fffff222221111111111111111111111111111111111111111111111111111111111111111111111111111111111
+33333330000000000000ccccccccccccc44444f22222111111111111111111111111111111111111111111111111111111111111111111111111111111111111
+333330000000000000ccccccccccccccccc444222211111111111111111111111111111111111111111111111111111111111111111111111111111111111111
 
 __sfx__
 010b00001007300000000000000010675300040000000000100730000010073000001067500000000000000010073000000000000000106750000000000000001007300000000000000010675000000000000000
@@ -2040,30 +2024,30 @@ a1020000101661016610166001060010600106001060010600106001060010600106001060010600
 1002000003250082500f250172501c25021250262502a250242002c20031200002000020000200002000020000200002000020000200002000020000200002000020000200002000020000200002000020000200
 a502000005757107571b757287573a7573f7573c757387573175721757127571175715757197571c7571f75723757247571f75719757117570c75706757027570075700707007070070700707007070070700707
 110200000375005750087500c750127501a7501e750257502f7503a7503f750007000070000700007000070000700007000070000700007000070000700007000070000700007000070000700007000070000700
-000500003b650356502f6502965025650206501c6501765013650116500f6500d6500c6500a650096500965008650076500765006650056600465004650036400264002640016300063000630006200061000600
+000500003b650356502f6502965025650206501c650176501365011650106500e6500b65008650066300362001610076000760006600056000460004600036000260002600016000060000600006000060000600
 150100003f66033660256601d660146600e6600b660086600766006660056600566005660046600466003660036600566008660096603d6000060000600006000060000600006000060000600006000060000600
 __music__
-01 02066363
-00 03060863
-00 04060963
-00 05070a0b
-00 00020c10
-00 01030d11
-00 00040e12
-00 0b050f11
-00 00020c10
-00 01030d11
-00 00040e12
-00 0b050f11
-00 15041612
-00 15141713
-00 15041812
-00 15141913
-00 15041612
-00 15141713
-00 15041a12
-00 0b141b13
-00 1c021d44
+01 42460602
+00 43080603
+00 44090604
+00 050a070b
+00 000c0210
+00 010d0311
+00 000e0412
+00 0b0f0511
+00 000c0210
+00 010d0311
+00 000e0412
+00 0b0f0511
+00 15160412
+00 15171413
+00 15180412
+00 15191413
+00 15160412
+00 15171413
+00 151a0412
+00 0b1b1413
+00 1c1d0244
 00 1c031e44
 00 1c041d44
 02 01051f44
