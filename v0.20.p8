@@ -10,9 +10,9 @@ function iso(x,y) return cam_offset_x+(x-y)*half_tile_width, cam_offset_y+(x+y)*
 function vdist(s,ox,oy) local dh=(s.current_altitude-terrain_h(ox,oy))/6 return dist_trig(s.x-ox-dh,s.y-oy-dh) end
 
 hc=split"0,0,1,0,5,1,5,6,2,4,9,3,13,2,8,9"
-function printx(s,x,y,c,c2)
+function printx(s,x,y,c)
     clip(0,y,128,3) print(s,x,y,c)
-    clip(0,y+3,128,3) print(s,x,y,c2 or hc[c+1])
+    clip(0,y+3,128,3) print(s,x,y,hc[c+1])
     clip()
 end
 
@@ -132,7 +132,7 @@ function _init()
 
     -- top/right UI (no ui_typing_started needed)
     ui_msg,ui_vis,ui_until,ui_col,ui_rmsg="",0,0,7,""
-    ui_box_h,ui_box_target_h=6,6
+    ui_box_h,ui_box_target_h,ui_shake=6,6,0
 end
 
 
@@ -646,11 +646,11 @@ end
 
 
 
-function draw_segmented_bar(x, y, value, max_value, filled_col, empty_col)
+function draw_segmented_bar(x, y, value, max_value, filled_col)
     local filled=flr(value*15/max_value)
     for i=0,14 do
         local s=x+i*4
-        rectfill(s,y,s+2,y+1,(i<filled) and filled_col or empty_col)
+        rectfill(s,y,s+2,y+1,(i<filled) and filled_col or 5)
     end
 end
 
@@ -676,7 +676,9 @@ function draw_ui()
 
     -- Only draw sprite when expanded enough
     if h > 25 then
-        spr(64,102,3,3,3)
+        local sx,sy=102,3
+        if ui_shake>0 then sx+=rnd(3) sy+=rnd(3) end
+        spr(64,sx,sy,3,3)
         if ui_msg!="" then
             -- Mouth animation
             if (time()*8)%2<1 then spr(99,110,19) end
@@ -694,13 +696,15 @@ function draw_ui()
     end
 
     -- bottom HUD
+    if ui_shake>0 then camera(0,-rnd(3)) ui_shake-=1 end
     sspr(0,16,128,16,0,112)
-    draw_segmented_bar(5,117,player_ship.hp,100,player_ship.hp>30 and 11 or 8,5)
-    draw_segmented_bar(5,120,player_ship.ammo,player_ship.max_ammo,12,5)
-    draw_segmented_bar(5,123,player_ship.mines,player_ship.max_mines,9,5)
+    draw_segmented_bar(5,117,player_ship.hp,100,player_ship.hp>30 and 11 or 8)
+    draw_segmented_bar(5,120,player_ship.ammo,player_ship.max_ammo,12)
+    draw_segmented_bar(5,123,player_ship.mines,player_ship.max_mines,9)
 
     local score_text = sub("00000"..flr(game_manager.display_score),-6)
     printx(score_text, 125 - #score_text * 4, 120, 10)
+    camera()
 end
 
 
@@ -1226,7 +1230,7 @@ function mine:update()
     if not self.owner then
         particle_sys:explode(self.x,self.y,-terrain_h(self.x,self.y,true)*block_h,1.5)
         sfx(62)
-        if vdist(player_ship,self.x,self.y)<2 then player_ship.hp-=10 end
+        if vdist(player_ship,self.x,self.y)<2 then player_ship.hp-=10 ui_react("ouch!",1,8) end
         return false
     end
     for t in all(self.owner==player_ship and enemies or{player_ship})do
@@ -1551,6 +1555,7 @@ function update_projectiles()
                 t.hp-=3
                 sfx(58)
                 p.life=0
+                if not t.is_enemy then ui_react("ouch!",1,8) end
                 particle_sys:explode(p.x,p.y,-t.current_altitude*block_h,0.8)
                 if t.hp<=0 then
                     sfx(62)
@@ -1571,6 +1576,10 @@ end
 function ui_say(t,d,c)
     ui_msg=t
     ui_vis,ui_col,ui_until,ui_box_target_h= 0,(c or 7),(d and time()+d or 0),26
+end
+function ui_react(t,d,c)
+    ui_shake=8
+    if ui_msg=="" and rnd()<.25 then ui_say(t,d,c) end
 end
 
 
