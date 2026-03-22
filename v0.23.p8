@@ -82,7 +82,7 @@ function _init()
     title_x1,title_x2=-64,128
 
     cam_offset_x,cam_offset_y=64,64
-    view_range,half_tile_width,half_tile_height,block_h=0,12,6,2
+    view_range,half_tile_width,half_tile_height,block_h=0,10,5,2
 
     cols,ftexts,ws,cpanels={},{},{},{}
     ccursor=1
@@ -142,14 +142,14 @@ function _update60()
         cam_offset_x,cam_offset_y=ship_cam(ps)
 
         if sphase=="title" then
-            if svr<8 then
+            if svr<9 then
                 svr+=0.25
                 view_range=flr(svr)
                 tm_target=view_range+2
             end
             if(title_x1<20)title_x1+=3
             if(title_x2>68)title_x2-=3
-            if svr>=8 and title_x1>=20 and title_x2<=68 then
+            if svr>=9 and title_x1>=20 and title_x2<=68 then
                 sphase="menu_select"
                 init_menu_select()
             end
@@ -168,10 +168,6 @@ function _update60()
             local tx,ty=ship_cam(ps)
             cam_offset_x+=(tx-cam_offset_x)*0.15
             cam_offset_y+=(ty-cam_offset_y)*0.15
-            local zt=mid(9,48/max(1,zm_md),12)
-            half_tile_width+=(zt-half_tile_width)*(zt<half_tile_width and 0.15 or 0.03)
-            half_tile_height,block_h=half_tile_width/2,half_tile_width/6
-            view_range=flr(96/half_tile_width)
         end
 
         update_projs()
@@ -334,7 +330,7 @@ function update_customize()
 
     local p=cpanels[ccursor]
     if p.is_start then
-        if btnp(❎) then sfx(57) view_range=8 init_game() end
+        if btnp(❎) then sfx(57) view_range=9 init_game() end
         return
     end
 
@@ -396,7 +392,7 @@ function update_menu_select()
     if btnp(❎) then
         sfx(57)
         if play_panel.selected then
-            view_range=8
+            view_range=9
             init_game()
         else
             enter_customize_mode()
@@ -437,7 +433,7 @@ function init_game()
     music(0)
     pal() palt(0,false) palt(14,true)
     tm_target,gstate=view_range+2,"game"
-    ftexts,ptl,mines,projs,enemies,cols,zm_md={},{},{},{},{},{},0
+    ftexts,ptl,mines,projs,enemies,cols={},{},{},{},{},{}
     gm_reset()
     ps.dead,ps.hp,ps.last_shot_time=false,ps.max_hp,time()+0.5
     tm_setpos(ps.x,ps.y)
@@ -526,6 +522,7 @@ function draw_world()
             end
         end
     end
+
     -- fx + ship
     ptl_draw()
     for c in all(cols) do col_draw(c) end
@@ -865,17 +862,16 @@ function gm_end_evt(success)
     if success and gm_nidx==1 then
         gm_diff+=1
     end
-    gm_evt,zm_md=nil,0
+    gm_evt=nil
 end
 
 
 -- EVENT UPDATE DISPATCH
 function evt_update()
     local e=gm_evt
-    zm_md=0
     if e.type==1 then
         -- combat
-        for i=#enemies,1,-1 do local en=enemies[i] ship_update(en) zm_md=max(zm_md,vdist(ps,en.x,en.y)) end
+        for i=#enemies,1,-1 do ship_update(enemies[i]) end
         local remaining=#enemies
         if remaining==0 then
             e.completed,e.success=true,true
@@ -898,8 +894,7 @@ function evt_update()
         ui_rmsg=fmt2(max(0,time_left)).."s"
         local circle=e.circles[e.current_target]
         if circle and not circle.collected then
-            zm_md=vdist(ps,circle.x,circle.y)
-            if zm_md<circle.radius then
+            if vdist(ps,circle.x,circle.y)<circle.radius then
                 circle.collected=true
                 sfx(59)
                 ps.hp=min(ps.hp+10,ps.max_hp)
@@ -1068,7 +1063,7 @@ function ship_new(x,y,is_enemy)
         hover_height=1,current_altitude=0,cam_alt=0,
         angle=0,accel=0.025,friction=0.95,max_speed=is_enemy and 0.16 or 0.2,
         projectile_speed=0.2,projectile_life=80,fire_rate=is_enemy and 0.15 or 0.1,
-        size=11,body_col=is_enemy and 8 or 12,outline_col=7,shadow_col=1,
+        size=9,body_col=is_enemy and 8 or 12,outline_col=7,shadow_col=1,
         gravity=0.025,is_hovering=false,particle_timer=0,ramp_boost=0.1,
         is_enemy=is_enemy,max_hp=is_enemy and 50 or 100,hp=is_enemy and 50 or 1,
         target=nil,ai_phase=is_enemy and rnd(6) or 0,
