@@ -1095,13 +1095,13 @@ end
 function ship_cam(s)
     local fx,fy=s.x,s.y
     if not s.is_enemy then
-        local best,ne=10
+        local best,ne=18
         for e in all(enemies) do
             local d=dist_trig(e.x-fx,e.y-fy)
             if d<best then best=d ne=e end
         end
-        s.cam_blend=(s.cam_blend or 0)+(ne and 0.01 or -0.015)
-        s.cam_blend=mid(0,s.cam_blend,0.2)
+        s.cam_blend=(s.cam_blend or 0)+(ne and 0.025 or -0.005)
+        s.cam_blend=mid(0,s.cam_blend,0.35)
         if ne and s.cam_blend>0 then
             fx+=(ne.x-fx)*s.cam_blend
             fy+=(ne.y-fy)*s.cam_blend
