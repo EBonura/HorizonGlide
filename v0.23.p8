@@ -9,7 +9,7 @@ function iso(x,y) return cam_offset_x+(x-y)*half_tile_width,cam_offset_y+(x+y)*h
 function vdist(s,ox,oy) local dh=(s.current_altitude-terrain_h(ox,oy))/6 return dist_trig(s.x-ox-dh,s.y-oy-dh) end
 
 hc=split"0,0,1,0,5,1,5,6,2,4,9,3,13,2,8,9"
-et=split("0.08,10,9,0.25,50,50,0.15,0.22,2,13,0.16,100,100,0.15,0.15,13,9,0.16,50,50,0.06,0.25,9,9,0.22,50,50,0.15",7)
+et={split"0.08,10,9,0.17,50,50,0.15",split"0.22,2,13,0.10,100,100,0.15",split"0.15,13,9,0.16,50,50,0.06",split"0.25,9,9,0.18,50,50,0.15"}
 function printx(s,x,y,c)
     clip(0,y,128,3) print(s,x,y,c)
     clip(0,y+3,128,3) print(s,x,y,hc[c+1])
@@ -538,8 +538,10 @@ function draw_game()
     -- projectiles
     for p in all(projs) do
         local sx,sy=iso(p.x,p.y) sy-=p.z*block_h
-        circfill(sx,sy,2,0)
-        circfill(sx,sy,1,p.is_enemy and 8 or 12)
+        if onscr(sx,sy) then
+            circfill(sx,sy,2,0)
+            circfill(sx,sy,1,p.is_enemy and 8 or 12)
+        end
     end
 
     -- target cursor
@@ -629,6 +631,7 @@ function ft_update(f)
     return f.life>0
 end
 
+function onscr(x,y) return abs(x-64)<80 and abs(y-64)<80 end
 function ft_draw(f)
     local w,x1=#f.text*4,f.x-#f.text*2
     rrectfill(x1-1,f.y-1,w+2,7,1,0)
@@ -1044,7 +1047,7 @@ function mn_update(m)
     for t in all(m.owner==ps and enemies or{ps})do
         if vdist(t,m.x,m.y)<2 then
             ptl_explode(m.x,m.y,-terrain_h(m.x,m.y,true)*block_h,1.5)
-            t.hp-=15 sfx(62)
+            t.hp-=10 sfx(62)
             return false
         end
     end
@@ -1053,6 +1056,7 @@ end
 
 function mn_draw(m)
     local sx,sy=iso(m.x,m.y)
+    if not onscr(sx,sy) then return end
     local col=m.owner==ps and 12 or 8
     local gz=terrain_h(m.x,m.y,true)*block_h
     draw_iso_ellipse(sx,sy-gz,24,12,col,0.04)
@@ -1067,10 +1071,10 @@ function ship_new(x,y,is_enemy)
     return {
         x=x,y=y,vx=0,vy=0,vz=0,
         hover_height=1,current_altitude=0,cam_alt=0,
-        angle=0,accel=0.025,friction=0.95,max_speed=is_enemy and 0.16 or 0.2,
+        angle=0,friction=0.95,max_speed=is_enemy and 0.16 or 0.2,
         projectile_speed=0.2,projectile_life=80,fire_rate=is_enemy and 0.15 or 0.1,
-        size=9,body_col=is_enemy and 8 or 12,outline_col=7,shadow_col=1,
-        gravity=0.025,particle_timer=0,ramp_boost=0.1,
+        size=9,body_col=is_enemy and 8 or 12,
+        particle_timer=0,
         is_enemy=is_enemy,max_hp=is_enemy and 50 or 100,hp=is_enemy and 50 or 1,
         ai_phase=is_enemy and rnd(6) or 0,
         max_ammo=is_enemy and 9999 or 100,ammo=is_enemy and 9999 or 50,
@@ -1151,19 +1155,17 @@ function ship_ai(s)
     local dx,dy=ps.x-s.x,ps.y-s.y
     local dist=dist_trig(dx,dy)
     local q=s.hp/s.max_hp
-    local mode=(q<=0.3 and dist>15) or (q>0.3 and (dist>20 or ((time()+s.ai_phase)%6)<3))
+    local mode=dist>20 or (q>0.3 and ((time()+s.ai_phase)%8)<5) or (q<=0.3 and dist>10)
     if not mode then dx,dy=-dx,-dy end
 
-    for e in all(enemies) do
-        if e~=s then
-            local ex,ey=s.x-e.x,s.y-e.y
-            local d=dist_trig(ex,ey)
-            if d<4 then local w=4-d dx+=ex*w dy+=ey*w end
-        end
-    end
+    for _,t in pairs{enemies,mines} do for o in all(t) do if o~=s then
+        local ex,ey=s.x-o.x,s.y-o.y
+        local d=dist_trig(ex,ey)
+        if d<2 then local w=2-d dx+=ex*w dy+=ey*w end
+    end end end
 
     local m=dist_trig(dx,dy)
-    if m>0.1 then s.vx+=dx*s.accel/m s.vy+=dy*s.accel/m end
+    if m>0.1 then s.vx+=dx*0.025/m s.vy+=dy*0.025/m end
 
     local t=time()
     if mode and ship_targeting(s) and (not s.last_shot_time or t-s.last_shot_time>s.fire_rate) then
@@ -1184,8 +1186,8 @@ function ship_update(s)
         tm_setpos(s.x,s.y)
         local rx=(btn(➡️) and 1 or 0)-(btn(⬅️) and 1 or 0)
         local ry=(btn(⬇️) and 1 or 0)-(btn(⬆️) and 1 or 0)
-        s.vx+=(rx+ry)*s.accel*0.707
-        s.vy+=(-rx+ry)*s.accel*0.707
+        s.vx+=(rx+ry)*0.025*0.707
+        s.vy+=(-rx+ry)*0.025*0.707
 
         ship_targeting(s)
         if btn(❎) and (not s.last_shot_time or time()-s.last_shot_time>s.fire_rate) then
@@ -1210,7 +1212,7 @@ function ship_update(s)
     local new_terrain=terrain_h(s.x,s.y)
     local height_diff=new_terrain-terrain_h(s.x-s.vx,s.y-s.vy)
     if s.is_hovering and height_diff>0 and speed>0.01 then
-        s.vz=min(height_diff*s.ramp_boost*speed*30,0.75)
+        s.vz=min(height_diff*0.1*speed*30,0.75)
         s.is_hovering=false
     end
 
@@ -1220,7 +1222,7 @@ function ship_update(s)
         s.current_altitude+=(target_altitude-s.current_altitude)*0.3 s.vz=0
     else
         s.current_altitude+=s.vz
-        s.vz-=s.gravity
+        s.vz-=0.025
         if s.current_altitude<=target_altitude then
             s.current_altitude=target_altitude s.vz=0 s.is_hovering=true
         end
@@ -1250,6 +1252,7 @@ end
 
 function ship_draw(s)
     local sx,sy=ship_spos(s)
+    if not onscr(sx,sy) then return end
     local ship_len=s.size*0.8
     local half_ship_len=ship_len*0.5
 
@@ -1262,11 +1265,11 @@ function ship_draw(s)
     local p3y=sy+sin(back_angle+sp)*half_ship_len
 
     local so=(s.current_altitude-terrain_h(s.x,s.y))*block_h
-    draw_triangle(fx,fy+so,p2x,p2y+so,p3x,p3y+so,s.shadow_col)
+    draw_triangle(fx,fy+so,p2x,p2y+so,p3x,p3y+so,1)
     draw_triangle(fx,fy,p2x,p2y,p3x,p3y,s.body_col)
-    line(fx,fy,p2x,p2y,s.outline_col)
-    if not s.open then line(p2x,p2y,p3x,p3y,s.outline_col) end
-    line(p3x,p3y,fx,fy,s.outline_col)
+    line(fx,fy,p2x,p2y,7)
+    if not s.open then line(p2x,p2y,p3x,p3y,7) end
+    line(p3x,p3y,fx,fy,7)
 
     if s.is_hovering then
         local c=sin(time()*5)>0 and 10 or 9
@@ -1300,7 +1303,7 @@ function update_projs()
             local dh=(p.z-ps.current_altitude)/6
             local dx,dy=ps.x-p.x+dh,ps.y-p.y+dh
             if dx*dx+dy*dy<0.5 then
-                ps.hp-=3
+                ps.hp-=2
                 ui_react("ouch!",1,8)
                 sfx(58)
                 p.life=0
