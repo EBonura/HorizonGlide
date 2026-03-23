@@ -9,7 +9,7 @@ function iso(x,y) return cam_offset_x+(x-y)*half_tile_width,cam_offset_y+(x+y)*h
 function vdist(s,ox,oy) local dh=(s.current_altitude-terrain_h(ox,oy))/6 return dist_trig(s.x-ox-dh,s.y-oy-dh) end
 
 hc=split"0,0,1,0,5,1,5,6,2,4,9,3,13,2,8,9"
-et={split"0.08,10,9,0.17,50,50,0.15",split"0.22,2,13,0.10,100,100,0.15",split"0.15,13,9,0.16,50,50,0.06",split"0.25,9,9,0.18,50,50,0.15"}
+et={split"0.08,10,9,0.17,50,50,0.30",split"0.22,2,13,0.10,100,100,0.35",split"0.15,13,9,0.16,50,50,0.12",split"0.25,9,9,0.18,50,50,0.30"}
 function printx(s,x,y,c)
     clip(0,y,128,3) print(s,x,y,c)
     clip(0,y+3,128,3) print(s,x,y,hc[c+1])
@@ -1106,6 +1106,7 @@ function ship_cam(s)
             fx+=(ne.x-fx)*s.cam_blend
             fy+=(ne.y-fy)*s.cam_blend
         end
+        tm_setpos(fx,fy)
     end
     s.cam_alt+=(s.current_altitude-s.cam_alt)*0.08
     local sx=(fx-fy)*half_tile_width
@@ -1183,7 +1184,6 @@ function ship_update(s)
     if s.is_enemy then
         ship_ai(s)
     else
-        tm_setpos(s.x,s.y)
         local rx=(btn(➡️) and 1 or 0)-(btn(⬅️) and 1 or 0)
         local ry=(btn(⬇️) and 1 or 0)-(btn(⬆️) and 1 or 0)
         s.vx+=(rx+ry)*0.025*0.707
