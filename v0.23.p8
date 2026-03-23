@@ -9,6 +9,7 @@ function iso(x,y) return cam_offset_x+(x-y)*half_tile_width,cam_offset_y+(x+y)*h
 function vdist(s,ox,oy) local dh=(s.current_altitude-terrain_h(ox,oy))/6 return dist_trig(s.x-ox-dh,s.y-oy-dh) end
 
 hc=split"0,0,1,0,5,1,5,6,2,4,9,3,13,2,8,9"
+et=split("0.08,10,9,0.25,50,50,0.15,0.22,2,13,0.16,100,100,0.15,0.15,13,9,0.16,50,50,0.06,0.25,9,9,0.22,50,50,0.15",7)
 function printx(s,x,y,c)
     clip(0,y,128,3) print(s,x,y,c)
     clip(0,y+3,128,3) print(s,x,y,hc[c+1])
@@ -829,7 +830,12 @@ function gm_start_evt()
         local n=min(1+gm_diff,6)
         for _=1,n do
             local a,d=rnd(1),10+rnd(5)
-            add(enemies,ship_new(ps.x+cos(a)*d,ps.y+sin(a)*d,true))
+            local e=ship_new(ps.x+cos(a)*d,ps.y+sin(a)*d,true)
+            local ti=flr(rnd(4))+1
+            local p=et[ti]
+            e.spread,e.body_col,e.size,e.max_speed,e.max_hp,e.hp,e.fire_rate=unpack(p)
+            e.open=ti>2
+            add(enemies,e)
         end
         gm_evt={type=1,start_count=#enemies,last_msg=nil,completed=false,success=false}
     elseif t==2 then
@@ -1064,12 +1070,12 @@ function ship_new(x,y,is_enemy)
         angle=0,accel=0.025,friction=0.95,max_speed=is_enemy and 0.16 or 0.2,
         projectile_speed=0.2,projectile_life=80,fire_rate=is_enemy and 0.15 or 0.1,
         size=9,body_col=is_enemy and 8 or 12,outline_col=7,shadow_col=1,
-        gravity=0.025,is_hovering=false,particle_timer=0,ramp_boost=0.1,
+        gravity=0.025,particle_timer=0,ramp_boost=0.1,
         is_enemy=is_enemy,max_hp=is_enemy and 50 or 100,hp=is_enemy and 50 or 1,
-        target=nil,ai_phase=is_enemy and rnd(6) or 0,
+        ai_phase=is_enemy and rnd(6) or 0,
         max_ammo=is_enemy and 9999 or 100,ammo=is_enemy and 9999 or 50,
         mines=is_enemy and 9999 or 7,max_mines=is_enemy and 9999 or 15,
-        last_shot_time=0,ai_state=is_enemy and "approach" or nil,charge_timer=0
+        spread=0.15,open=false
     }
 end
 
@@ -1249,16 +1255,17 @@ function ship_draw(s)
 
     local fx,fy=sx+cos(s.angle)*ship_len,sy+sin(s.angle)*half_ship_len
     local back_angle=s.angle+0.5
-    local p2x=sx+cos(back_angle-0.15)*ship_len
-    local p2y=sy+sin(back_angle-0.15)*half_ship_len
-    local p3x=sx+cos(back_angle+0.15)*ship_len
-    local p3y=sy+sin(back_angle+0.15)*half_ship_len
+    local sp=s.spread
+    local p2x=sx+cos(back_angle-sp)*ship_len
+    local p2y=sy+sin(back_angle-sp)*half_ship_len
+    local p3x=sx+cos(back_angle+sp)*ship_len
+    local p3y=sy+sin(back_angle+sp)*half_ship_len
 
     local so=(s.current_altitude-terrain_h(s.x,s.y))*block_h
     draw_triangle(fx,fy+so,p2x,p2y+so,p3x,p3y+so,s.shadow_col)
     draw_triangle(fx,fy,p2x,p2y,p3x,p3y,s.body_col)
     line(fx,fy,p2x,p2y,s.outline_col)
-    line(p2x,p2y,p3x,p3y,s.outline_col)
+    if not s.open then line(p2x,p2y,p3x,p3y,s.outline_col) end
     line(p3x,p3y,fx,fy,s.outline_col)
 
     if s.is_hovering then
